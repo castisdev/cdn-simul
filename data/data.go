@@ -1,6 +1,8 @@
 package data
 
-import "time"
+import (
+	"time"
+)
 
 // Session :
 type Session struct {
@@ -14,8 +16,7 @@ type Session struct {
 
 // Config :
 type Config struct {
-	VODcfg         []VODConfig
-	CacheChunkSize int64
+	VODs []VODConfig
 }
 
 // VODConfig :

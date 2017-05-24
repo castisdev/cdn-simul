@@ -4,18 +4,21 @@ import (
 	"fmt"
 	"sync"
 
+	"strconv"
+
 	"github.com/castisdev/cdn-simul/data"
 )
 
 // Cache :
 type Cache struct {
-	mu        sync.RWMutex
-	Lru       *Lru
-	LimitSize int64
-	CurSize   int64
-	HitCount  int64
-	MissCount int64
-	originBps int64
+	mu         sync.RWMutex
+	Lru        *Lru
+	LimitSize  int64
+	CurSize    int64
+	HitCount   int64
+	MissCount  int64
+	OriginBps  int64
+	MissChunks []string
 }
 
 // NewCache :
@@ -30,13 +33,44 @@ func NewCache(limitSize int64) (*Cache, error) {
 	return m, nil
 }
 
+func filepath(evt data.ChunkEvent) string {
+	return evt.FileName + "-" + strconv.FormatInt(evt.Index, 10)
+}
+
+func chunkSession(evt data.ChunkEvent) string {
+	return evt.SessionID + "-" + filepath(evt)
+}
+
 // StartChunk :
-func (c *Cache) StartChunk(evt data.Event) error {
+func (c *Cache) StartChunk(evt data.ChunkEvent) error {
+	n, ok := c.Get(filepath(evt))
+	if ok {
+		if n != evt.ChunkSize {
+			return fmt.Errorf("invalid chunk size, cached(%v) evt(%v)", n, evt.ChunkSize)
+		}
+		c.HitCount++
+	} else {
+		err := c.Add(filepath(evt), evt.ChunkSize)
+		if err != nil {
+			return err
+		}
+		c.MissCount++
+		c.OriginBps += evt.Bps
+		c.MissChunks = append(c.MissChunks, chunkSession(evt))
+	}
 	return nil
 }
 
 // EndChunk :
-func (c *Cache) EndChunk(evt data.Event) error {
+func (c *Cache) EndChunk(evt data.ChunkEvent) error {
+	for i, v := range c.MissChunks {
+		if v == chunkSession(evt) {
+			c.OriginBps -= evt.Bps
+			c.MissChunks = append(c.MissChunks[:i], c.MissChunks[i+1:]...)
+			return nil
+		}
+
+	}
 	return nil
 }
 
@@ -46,7 +80,6 @@ func (c *Cache) init() error {
 			v := value.(int64)
 			c.CurSize -= v
 		},
-		OnCacheHit: nil,
 	}
 
 	return nil
