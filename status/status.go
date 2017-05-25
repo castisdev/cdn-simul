@@ -52,6 +52,8 @@ type CacheStatus struct {
 	CacheHitCount  int64
 	CacheMissRate  float64
 	OriginBps      int64
+	CurSize        int64
+	LimitSize      int64
 }
 
 func (s *CacheStatus) String() string {

@@ -138,6 +138,8 @@ func (lb *LB) MakeStatus(t time.Time) *status.Status {
 			CacheHitCount:  v.HitCount,
 			CacheMissCount: v.MissCount,
 			OriginBps:      v.OriginBps,
+			CurSize:        v.CurSize,
+			LimitSize:      v.LimitSize,
 		}
 	}
 	st.Origin.Bps = originBps
