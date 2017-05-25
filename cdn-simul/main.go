@@ -1,24 +1,25 @@
 package main
 
 import (
+	"bytes"
 	"encoding/csv"
+	"encoding/gob"
+	"encoding/json"
+	"flag"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"log"
 	"os"
+	"path"
 	"strconv"
 	"strings"
 	"time"
 
-	"encoding/json"
-	"io/ioutil"
-
-	"flag"
-
-	"path"
-
 	"github.com/castisdev/cdn-simul/data"
 	"github.com/castisdev/cdn-simul/lb"
+	"github.com/castisdev/cdn/profile"
+	"github.com/syndtr/goleveldb/leveldb/iterator"
 )
 
 const chunkSize int64 = 2 * 1024 * 1024
@@ -147,19 +148,41 @@ func readChunkEvent(r *csv.Reader) *chunkEvent {
 	return &chunk
 }
 
+func readChunkEventFromDB(iter iterator.Iterator) *chunkEvent {
+	if !iter.Next() {
+		return nil
+	}
+	reader := bytes.NewReader(iter.Value())
+	dec := gob.NewDecoder(reader)
+	var c chunkEvent
+	err := dec.Decode(&c)
+	if err != nil {
+		log.Fatal(err)
+	}
+	return &c
+}
+
 type sessionInfo struct {
 	lastIndex int
 	bps       int
 }
 
 func main() {
-	var cfgFile, csvDir string
+	var cfgFile, csvDir, cpuprofile string
 	var readEventCount int
 
 	flag.StringVar(&cfgFile, "cfg", "cdn-simul.json", "config file")
 	flag.StringVar(&csvDir, "csv-dir", ".", "directory includes event csv files")
 	flag.IntVar(&readEventCount, "event-count", 0, "event count to process. if 0, process all event")
+	flag.StringVar(&cpuprofile, "cpuprofile", "", "write cpu profile")
 	flag.Parse()
+
+	if cpuprofile != "" {
+		if err := profile.StartCPUProfile(cpuprofile); err != nil {
+			log.Fatal(err)
+		}
+		defer profile.StopCPUProfile()
+	}
 
 	f, err := os.OpenFile(cfgFile, os.O_RDONLY, 0755)
 	if err != nil {
@@ -181,6 +204,7 @@ func main() {
 
 	sessCsvFile := path.Join(csvDir, "session_event.csv")
 	chunkCsvFile := path.Join(csvDir, "chunk_event.csv")
+	//dbFile := path.Join(csvDir, "chunk.db")
 
 	sfile, err := os.OpenFile(sessCsvFile, os.O_RDONLY, 0755)
 	if err != nil {
@@ -197,6 +221,13 @@ func main() {
 
 	sess := readSessionEvent(sreader)
 	chunk := readChunkEvent(creader)
+
+	// db, err := leveldb.OpenFile(dbFile, nil)
+	// if err != nil {
+	// 	log.Fatal(err)
+	// }
+	// iter := db.NewIterator(nil, nil)
+	// chunk := readChunkEventFromDB(iter)
 
 	sessionMap := make(map[string]sessionInfo)
 	i := 0
@@ -251,6 +282,7 @@ func main() {
 
 				sess = readSessionEvent(sreader)
 				chunk = readChunkEvent(creader)
+				//chunk = readChunkEventFromDB(iter)
 			} else { // sessionClosed
 				evt := data.ChunkEvent{
 					Time:      sess.eventTime.Add(-time.Millisecond),
@@ -321,6 +353,7 @@ func main() {
 			sessionMap[chunk.SID] = sinfo
 
 			chunk = readChunkEvent(creader)
+			//chunk = readChunkEventFromDB(iter)
 		}
 	}
 }
