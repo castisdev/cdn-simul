@@ -48,7 +48,7 @@ func main() {
 	for _, s := range slist {
 		d += s.ended.Sub(s.started)
 	}
-	fmt.Printf("average session duration = %v", d/time.Duration(len(slist)))
+	fmt.Printf("average session duration = %v\n", d/time.Duration(len(slist)))
 
 	sout, _ := os.Create("session_event.csv")
 	defer sout.Close()
@@ -59,6 +59,7 @@ func main() {
 	cout, _ := os.Create("chunk_event.csv")
 	defer cout.Close()
 	iter := db.NewIterator(nil, nil)
+	var cnt int64
 	for iter.Next() {
 		reader := bytes.NewReader(iter.Value())
 		dec := gob.NewDecoder(reader)
@@ -68,7 +69,10 @@ func main() {
 			log.Fatal(err)
 		}
 		fmt.Fprintln(cout, c)
+		cnt++
 	}
+	fmt.Printf("chunk length = %d\n", cnt)
+
 	// for _, e := range elist {
 	// 	fmt.Println(e)
 	// }
@@ -158,6 +162,7 @@ type sessionInfo struct {
 }
 
 var layout = "2006-01-02 15:04:05.000"
+var dateLayout = "2006-01-02"
 
 func (s sessionInfo) String() string {
 	return fmt.Sprintf("%s, %s, %s, %s, %d", s.sid, s.started.Format(layout), s.ended.Format(layout), s.filename, s.bandwidth)
@@ -226,14 +231,14 @@ func doOneFile(fpath string, smap map[string]*sessionInfo, slist *[]*sessionInfo
 				*elist = append(*elist, sessionEvent{
 					sid:       si.sid,
 					eventTime: si.started,
-					eventType: sessionCreated,
+					eventType: created,
 					filename:  si.filename,
 					bandwidth: si.bandwidth,
 				})
 				*elist = append(*elist, sessionEvent{
 					sid:       si.sid,
 					eventTime: si.ended,
-					eventType: sessionClosed,
+					eventType: closed,
 					filename:  si.filename,
 					bandwidth: si.bandwidth,
 				})
@@ -241,19 +246,42 @@ func doOneFile(fpath string, smap map[string]*sessionInfo, slist *[]*sessionInfo
 				chunkDur := time.Duration(chunkSize / (float64(si.bandwidth) / 8) * float64(time.Second.Nanoseconds()))
 				i := 0
 				for t := si.started; si.ended.Sub(t) > 0; t, i = t.Add(chunkDur), i+1 {
-					c := chunkEvent{
-						SID:       si.sid,
-						EventTime: t,
-						Filename:  si.filename,
-						Index:     i,
+					{
+						c := chunkEvent{
+							SID:       si.sid,
+							EventTime: t,
+							Filename:  si.filename,
+							Index:     i,
+							EventType: created,
+						}
+						var buf bytes.Buffer
+						enc := gob.NewEncoder(&buf)
+						err := enc.Encode(c)
+						if err != nil {
+							log.Fatal(err)
+						}
+						batch.Put([]byte(c.EventTime.Format(layout)+c.SID+strconv.Itoa(int(c.EventType))), buf.Bytes())
 					}
-					var buf bytes.Buffer
-					enc := gob.NewEncoder(&buf)
-					err := enc.Encode(c)
-					if err != nil {
-						log.Fatal(err)
+					{
+						et := t.Add(chunkDur)
+						if si.ended.Sub(et) < 0 {
+							et = si.ended
+						}
+						c := chunkEvent{
+							SID:       si.sid,
+							EventTime: et,
+							Filename:  si.filename,
+							Index:     i,
+							EventType: closed,
+						}
+						var buf bytes.Buffer
+						enc := gob.NewEncoder(&buf)
+						err := enc.Encode(c)
+						if err != nil {
+							log.Fatal(err)
+						}
+						batch.Put([]byte(c.EventTime.Format(layout)+c.SID+strconv.Itoa(int(c.EventType))), buf.Bytes())
 					}
-					batch.Put([]byte(c.EventTime.Format(layout)+c.SID), buf.Bytes())
 					// *clist = append(*clist, c)
 				}
 			}
@@ -278,9 +306,9 @@ type eventType int
 
 func (et eventType) String() string {
 	switch et {
-	case sessionCreated:
+	case created:
 		return "created"
-	case sessionClosed:
+	case closed:
 		return "closed"
 	default:
 		return "unknown"
@@ -288,8 +316,8 @@ func (et eventType) String() string {
 }
 
 const (
-	sessionCreated eventType = iota
-	sessionClosed
+	closed eventType = iota
+	created
 )
 
 type sessionEvent struct {
@@ -323,10 +351,11 @@ type chunkEvent struct {
 	EventTime time.Time
 	Filename  string
 	Index     int
+	EventType eventType
 }
 
 func (e chunkEvent) String() string {
-	return fmt.Sprintf("%s, %s, %4d, %s", e.EventTime.Format(layout), e.SID, e.Index, e.Filename)
+	return fmt.Sprintf("%s, %s, %7v, %4d, %s", e.EventTime.Format(layout), e.SID, e.EventType, e.Index, e.Filename)
 }
 
 type chunkEventSorter []chunkEvent
