@@ -57,5 +57,5 @@ type CacheStatus struct {
 }
 
 func (s *CacheStatus) String() string {
-	return fmt.Sprintf("miss:%v hit:%v missRate:%v originBps:%v", s.CacheMissCount, s.CacheHitCount, s.CacheMissRate, s.OriginBps)
+	return fmt.Sprintf("miss:%v hit:%v missRate:%v originBps:%v curSize:%v limitSize:%v", s.CacheMissCount, s.CacheHitCount, s.CacheMissRate, s.OriginBps, s.CurSize, s.LimitSize)
 }

@@ -230,10 +230,12 @@ func main() {
 	// chunk := readChunkEventFromDB(iter)
 
 	sessionMap := make(map[string]sessionInfo)
+	now := time.Now()
+	logT := time.Now()
 	i := 0
 	for {
 		i++
-		if i == readEventCount {
+		if readEventCount != 0 && i == readEventCount {
 			break
 		}
 
@@ -259,8 +261,11 @@ func main() {
 				if err != nil {
 					log.Fatal(err)
 				}
-				log.Printf("start %s\n", evt.String())
-				log.Printf("%v\n", st.String())
+				if time.Since(logT) > time.Second {
+					log.Printf("start %s\n", evt.String())
+					log.Printf("%v\n", st.String())
+					logT = time.Now()
+				}
 
 				if sess.sid == chunk.SID && chunk.EventTime.Equal(sess.eventTime) {
 					evt := data.ChunkEvent{
@@ -271,12 +276,12 @@ func main() {
 						Index:     int64(chunk.Index),
 						ChunkSize: chunkSize,
 					}
-					st, err := lb.StartChunk(evt)
+					_, err := lb.StartChunk(evt)
 					if err != nil {
 						log.Fatal(err)
 					}
-					log.Printf("start %s\n", evt.String())
-					log.Printf("%v\n", st.String())
+					//log.Printf("start %s\n", evt.String())
+					//log.Printf("%v\n", st.String())
 				}
 				sessionMap[sess.sid] = sessionInfo{lastIndex: chunk.Index, bps: sess.bandwidth}
 
@@ -292,12 +297,12 @@ func main() {
 					Index:     int64(sessionMap[sess.sid].lastIndex),
 					ChunkSize: chunkSize,
 				}
-				st, err := lb.EndChunk(evt)
+				_, err := lb.EndChunk(evt)
 				if err != nil {
 					log.Fatal(err)
 				}
-				log.Printf("end %s\n", evt.String())
-				log.Printf("%v\n", st.String())
+				//log.Printf("end %s\n", evt.String())
+				//log.Printf("%v\n", st.String())
 
 				evt2 := data.SessionEvent{
 					Time:      sess.eventTime,
@@ -305,12 +310,12 @@ func main() {
 					FileName:  sess.filename,
 					Bps:       int64(sess.bandwidth),
 				}
-				st2, err := lb.EndSession(evt2)
+				_, err = lb.EndSession(evt2)
 				if err != nil {
 					log.Fatal(err)
 				}
-				log.Printf("end %s\n", evt2.String())
-				log.Printf("%v\n", st2.String())
+				//log.Printf("end %s\n", evt2.String())
+				//log.Printf("%v\n", st2.String())
 
 				delete(sessionMap, sess.sid)
 				sess = readSessionEvent(sreader)
@@ -326,12 +331,12 @@ func main() {
 					Index:     int64(chunk.Index - 1),
 					ChunkSize: chunkSize,
 				}
-				st, err := lb.EndChunk(evt)
+				_, err := lb.EndChunk(evt)
 				if err != nil {
 					log.Fatal(err)
 				}
-				log.Printf("end %s\n", evt.String())
-				log.Printf("%v\n", st.String())
+				//log.Printf("end %s\n", evt.String())
+				//log.Printf("%v\n", st.String())
 
 				evt2 := data.ChunkEvent{
 					Time:      chunk.EventTime,
@@ -341,12 +346,12 @@ func main() {
 					Index:     int64(chunk.Index),
 					ChunkSize: chunkSize,
 				}
-				st2, err := lb.StartChunk(evt2)
+				_, err = lb.StartChunk(evt2)
 				if err != nil {
 					log.Fatal(err)
 				}
-				log.Printf("start %s\n", evt2.String())
-				log.Printf("%v\n", st2.String())
+				//log.Printf("start %s\n", evt2.String())
+				//log.Printf("%v\n", st2.String())
 			}
 			sinfo := sessionMap[chunk.SID]
 			sinfo.lastIndex = chunk.Index
@@ -356,4 +361,5 @@ func main() {
 			//chunk = readChunkEventFromDB(iter)
 		}
 	}
+	log.Printf("completed. elapsed:%v\n", time.Since(now))
 }
