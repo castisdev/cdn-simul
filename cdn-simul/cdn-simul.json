@@ -1,0 +1,16 @@
+{
+    "vods": [
+        {
+            "vodid": "v1",
+            "storageSize": 6000000000000,
+            "limitSession": 800,
+            "limitBps": 3000000000
+        },
+        {
+            "vodid": "v2",
+            "storageSize": 6000000000000,
+            "limitSession": 800,
+            "limitBps": 3000000000
+        }
+    ]
+}
