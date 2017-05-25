@@ -2,12 +2,14 @@ package lb
 
 import (
 	"fmt"
+	"log"
 	"time"
 
 	"github.com/castisdev/cdn-simul/data"
 	"github.com/castisdev/cdn-simul/lb/cache"
 	"github.com/castisdev/cdn-simul/lb/vod"
 	"github.com/castisdev/cdn-simul/status"
+	"github.com/castisdev/cdn/consistenthash"
 )
 
 // LB :
@@ -15,6 +17,8 @@ type LB struct {
 	Caches        map[vod.Key]*cache.Cache
 	VODs          map[vod.Key]*vod.VOD
 	vodSessionMap map[string]vod.Key
+
+	hash *consistenthash.Map
 }
 
 // New :
@@ -24,6 +28,8 @@ func New(cfg data.Config) (*LB, error) {
 		VODs:          make(map[vod.Key]*vod.VOD),
 		vodSessionMap: make(map[string]vod.Key),
 	}
+	l.hash = consistenthash.New(3000, nil)
+	keyMap := make(map[string]int)
 	for _, v := range cfg.VODs {
 		c, err := cache.NewCache(v.StorageSize)
 		if err != nil {
@@ -31,19 +37,35 @@ func New(cfg data.Config) (*LB, error) {
 		}
 		l.Caches[vod.Key(v.VodID)] = c
 		l.VODs[vod.Key(v.VodID)] = &vod.VOD{LimitSessionCount: v.LimitSession, LimitBps: v.LimitBps}
+		hashWeight := 1
+		keyMap[v.VodID] = hashWeight
 	}
+	l.hash.Add(keyMap)
+
 	return l, nil
 }
 
 // SelectVOD :
-func (lb *LB) SelectVOD(evt data.SessionEvent) (vodKey vod.Key, err error) {
+func (lb *LB) SelectVOD(evt data.SessionEvent) (vod.Key, error) {
 	if len(lb.VODs) != len(lb.Caches) || len(lb.VODs) == 0 || len(lb.Caches) == 0 {
 		return "", fmt.Errorf("invalid cache/vod info")
 	}
-	for k := range lb.VODs {
+	return lb.SelectVODByHash(evt)
+}
+
+// SelectVODByHash :
+func (lb *LB) SelectVODByHash(evt data.SessionEvent) (vod.Key, error) {
+	vodKeys := lb.hash.GetItems(evt.FileName)
+	for _, v := range vodKeys {
+		k := vod.Key(v)
+		if lb.VODs[k].LimitSessionCount < lb.VODs[k].CurSessionCount+1 || lb.VODs[k].LimitBps < lb.VODs[k].CurBps+evt.Bps {
+			log.Printf("not available vod[%v], session(%v/%v) bps(%v/%v)",
+				k, lb.VODs[k].CurSessionCount, lb.VODs[k].LimitSessionCount, lb.VODs[k].CurBps, lb.VODs[k].LimitBps)
+			continue
+		}
 		return k, nil
 	}
-	return "", nil
+	return "", fmt.Errorf("failed to select vod")
 }
 
 // StartSession :
