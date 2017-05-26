@@ -2,8 +2,6 @@ package cache
 
 import (
 	"fmt"
-	"sync"
-
 	"strconv"
 
 	"github.com/castisdev/cdn-simul/data"
@@ -11,14 +9,14 @@ import (
 
 // Cache :
 type Cache struct {
-	mu         sync.RWMutex
-	Lru        *Lru
-	LimitSize  int64
-	CurSize    int64
-	HitCount   int64
-	MissCount  int64
-	OriginBps  int64
-	MissChunks []string
+	Lru         *Lru
+	LimitSize   int64
+	CurSize     int64
+	HitCount    int64
+	MissCount   int64
+	OriginBps   int64
+	MissChunks  []string
+	IsCacheFull bool
 }
 
 // NewCache :
@@ -77,6 +75,7 @@ func (c *Cache) EndChunk(evt data.ChunkEvent) error {
 func (c *Cache) init() error {
 	c.Lru = &Lru{
 		OnEvicted: func(key lruKey, value interface{}) {
+			c.IsCacheFull = true
 			v := value.(int64)
 			c.CurSize -= v
 		},
@@ -87,9 +86,6 @@ func (c *Cache) init() error {
 
 // Add :
 func (c *Cache) Add(relFilePath string, size int64) error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
 	key := relFilePath
 
 	if c.LimitSize <= 0 || c.LimitSize < size {
@@ -109,8 +105,6 @@ func (c *Cache) Add(relFilePath string, size int64) error {
 
 // Get :
 func (c *Cache) Get(filepath string) (size int64, ok bool) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
 	if c.Lru == nil {
 		return
 	}
@@ -123,7 +117,5 @@ func (c *Cache) Get(filepath string) (size int64, ok bool) {
 
 // Remove :
 func (c *Cache) Remove(filepath string) bool {
-	c.mu.Lock()
-	defer c.mu.Unlock()
 	return c.Lru.Remove(filepath)
 }

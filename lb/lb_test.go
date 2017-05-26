@@ -50,8 +50,8 @@ func TestLB_OneVOD(t *testing.T) {
 			Bps:       30,
 		}, false, stat, func() {
 			stat.Time = time.Date(2017, 1, 1, 0, 0, 0, 0, time.UTC)
-			stat.Vods[vod.Key(v1.VodID)] = &status.VODStatus{Bps: 30, SessionCount: 1}
-			stat.Caches[vod.Key(v1.VodID)] = &status.CacheStatus{LimitSize: 100}
+			stat.Vods[vod.Key(v1.VodID)] = &status.VODStatus{VODKey: v1.VodID, CurBps: 30, CurSessionCount: 1}
+			stat.Caches[vod.Key(v1.VodID)] = &status.CacheStatus{VODKey: v1.VodID}
 		}},
 
 		{"StartChunk a.mpg-0, miss (sess1)", StartChunkType, data.ChunkEvent{
@@ -65,8 +65,8 @@ func TestLB_OneVOD(t *testing.T) {
 		}, false, stat, func() {
 			stat.Time = time.Date(2017, 1, 1, 0, 0, 1, 0, time.UTC)
 			stat.Origin.Bps = 30
-			stat.Vods[vod.Key(v1.VodID)] = &status.VODStatus{Bps: 30, SessionCount: 1}
-			stat.Caches[vod.Key(v1.VodID)] = &status.CacheStatus{CacheMissCount: 1, CacheMissRate: 100, OriginBps: 30, CurSize: 20, LimitSize: 100}
+			stat.Vods[vod.Key(v1.VodID)] = &status.VODStatus{VODKey: v1.VodID, CurBps: 30, CurSessionCount: 1}
+			stat.Caches[vod.Key(v1.VodID)] = &status.CacheStatus{VODKey: v1.VodID, CacheMissCount: 1, OriginBps: 30, CurSize: 20}
 		}},
 
 		{"StartSession sess2", StartSessionType, data.SessionEvent{
@@ -77,8 +77,8 @@ func TestLB_OneVOD(t *testing.T) {
 			Bps:       20,
 		}, false, stat, func() {
 			stat.Time = time.Date(2017, 1, 1, 0, 0, 3, 0, time.UTC)
-			stat.Vods[vod.Key(v1.VodID)] = &status.VODStatus{Bps: 50, SessionCount: 2}
-			stat.Caches[vod.Key(v1.VodID)] = &status.CacheStatus{CacheMissCount: 1, CacheMissRate: 100, OriginBps: 30, CurSize: 20, LimitSize: 100}
+			stat.Vods[vod.Key(v1.VodID)] = &status.VODStatus{VODKey: v1.VodID, CurBps: 50, CurSessionCount: 2}
+			stat.Caches[vod.Key(v1.VodID)] = &status.CacheStatus{VODKey: v1.VodID, CacheMissCount: 1, OriginBps: 30, CurSize: 20}
 		}},
 
 		{"StartSession sess3, reaches limitSession", StartSessionType, data.SessionEvent{
@@ -100,8 +100,8 @@ func TestLB_OneVOD(t *testing.T) {
 		}, false, stat, func() {
 			stat.Time = time.Date(2017, 1, 1, 0, 0, 6, 1, time.UTC)
 			stat.Origin.Bps = 0
-			stat.Vods[vod.Key(v1.VodID)] = &status.VODStatus{Bps: 50, SessionCount: 2}
-			stat.Caches[vod.Key(v1.VodID)] = &status.CacheStatus{CacheMissCount: 1, CacheMissRate: 100, OriginBps: 0, CurSize: 20, LimitSize: 100}
+			stat.Vods[vod.Key(v1.VodID)] = &status.VODStatus{VODKey: v1.VodID, CurBps: 50, CurSessionCount: 2}
+			stat.Caches[vod.Key(v1.VodID)] = &status.CacheStatus{VODKey: v1.VodID, CacheMissCount: 1, OriginBps: 0, CurSize: 20}
 		}},
 
 		{"StartChunk a.mpg-1, miss (sess1)", StartChunkType, data.ChunkEvent{
@@ -115,8 +115,8 @@ func TestLB_OneVOD(t *testing.T) {
 		}, false, stat, func() {
 			stat.Time = time.Date(2017, 1, 1, 0, 0, 6, 2, time.UTC)
 			stat.Origin.Bps = 30
-			stat.Vods[vod.Key(v1.VodID)] = &status.VODStatus{Bps: 50, SessionCount: 2}
-			stat.Caches[vod.Key(v1.VodID)] = &status.CacheStatus{CacheMissCount: 2, CacheMissRate: 100, OriginBps: 30, CurSize: 30, LimitSize: 100}
+			stat.Vods[vod.Key(v1.VodID)] = &status.VODStatus{VODKey: v1.VodID, CurBps: 50, CurSessionCount: 2}
+			stat.Caches[vod.Key(v1.VodID)] = &status.CacheStatus{VODKey: v1.VodID, CacheMissCount: 2, OriginBps: 30, CurSize: 30}
 		}},
 
 		{"EndChunk a.mpg-1 (sess1)", EndChunkType, data.ChunkEvent{
@@ -130,8 +130,8 @@ func TestLB_OneVOD(t *testing.T) {
 		}, false, stat, func() {
 			stat.Time = time.Date(2017, 1, 1, 0, 0, 8, 0, time.UTC)
 			stat.Origin.Bps = 0
-			stat.Vods[vod.Key(v1.VodID)] = &status.VODStatus{Bps: 50, SessionCount: 2}
-			stat.Caches[vod.Key(v1.VodID)] = &status.CacheStatus{CacheMissCount: 2, CacheMissRate: 100, OriginBps: 0, CurSize: 30, LimitSize: 100}
+			stat.Vods[vod.Key(v1.VodID)] = &status.VODStatus{VODKey: v1.VodID, CurBps: 50, CurSessionCount: 2}
+			stat.Caches[vod.Key(v1.VodID)] = &status.CacheStatus{VODKey: v1.VodID, CacheMissCount: 2, OriginBps: 0, CurSize: 30}
 		}},
 
 		{"StartChunk a.mpg-0, hit (sess1)", StartChunkType, data.ChunkEvent{
@@ -145,8 +145,8 @@ func TestLB_OneVOD(t *testing.T) {
 		}, false, stat, func() {
 			stat.Time = time.Date(2017, 1, 1, 0, 0, 8, 1, time.UTC)
 			stat.Origin.Bps = 0
-			stat.Vods[vod.Key(v1.VodID)] = &status.VODStatus{Bps: 50, SessionCount: 2}
-			stat.Caches[vod.Key(v1.VodID)] = &status.CacheStatus{CacheHitCount: 1, CacheMissCount: 2, CacheMissRate: float64(2) / float64(3) * 100, OriginBps: 0, CurSize: 30, LimitSize: 100}
+			stat.Vods[vod.Key(v1.VodID)] = &status.VODStatus{VODKey: v1.VodID, CurBps: 50, CurSessionCount: 2}
+			stat.Caches[vod.Key(v1.VodID)] = &status.CacheStatus{VODKey: v1.VodID, CacheHitCount: 1, CacheMissCount: 2, OriginBps: 0, CurSize: 30}
 		}},
 
 		{"EndChunk a.mpg-0, hit (sess1)", EndChunkType, data.ChunkEvent{
@@ -160,8 +160,8 @@ func TestLB_OneVOD(t *testing.T) {
 		}, false, stat, func() {
 			stat.Time = time.Date(2017, 1, 1, 0, 0, 8, 2, time.UTC)
 			stat.Origin.Bps = 0
-			stat.Vods[vod.Key(v1.VodID)] = &status.VODStatus{Bps: 50, SessionCount: 2}
-			stat.Caches[vod.Key(v1.VodID)] = &status.CacheStatus{CacheHitCount: 1, CacheMissCount: 2, CacheMissRate: float64(2) / float64(3) * 100, OriginBps: 0, CurSize: 30, LimitSize: 100}
+			stat.Vods[vod.Key(v1.VodID)] = &status.VODStatus{VODKey: v1.VodID, CurBps: 50, CurSessionCount: 2}
+			stat.Caches[vod.Key(v1.VodID)] = &status.CacheStatus{VODKey: v1.VodID, CacheHitCount: 1, CacheMissCount: 2, OriginBps: 0, CurSize: 30}
 		}},
 
 		{"EndSession sess1", EndSessionType, data.SessionEvent{
@@ -173,8 +173,8 @@ func TestLB_OneVOD(t *testing.T) {
 		}, false, stat, func() {
 			stat.Origin.Bps = 0
 			stat.Time = time.Date(2017, 1, 1, 0, 0, 9, 0, time.UTC)
-			stat.Vods[vod.Key(v1.VodID)] = &status.VODStatus{Bps: 20, SessionCount: 1}
-			stat.Caches[vod.Key(v1.VodID)] = &status.CacheStatus{CacheHitCount: 1, CacheMissCount: 2, CacheMissRate: float64(2) / float64(3) * 100, OriginBps: 0, CurSize: 30, LimitSize: 100}
+			stat.Vods[vod.Key(v1.VodID)] = &status.VODStatus{VODKey: v1.VodID, CurBps: 20, CurSessionCount: 1}
+			stat.Caches[vod.Key(v1.VodID)] = &status.CacheStatus{VODKey: v1.VodID, CacheHitCount: 1, CacheMissCount: 2, OriginBps: 0, CurSize: 30}
 		}},
 
 		{"EndSession sess2", EndSessionType, data.SessionEvent{
@@ -186,8 +186,8 @@ func TestLB_OneVOD(t *testing.T) {
 		}, false, stat, func() {
 			stat.Origin.Bps = 0
 			stat.Time = time.Date(2017, 1, 1, 0, 0, 12, 0, time.UTC)
-			stat.Vods[vod.Key(v1.VodID)] = &status.VODStatus{Bps: 0, SessionCount: 0}
-			stat.Caches[vod.Key(v1.VodID)] = &status.CacheStatus{CacheHitCount: 1, CacheMissCount: 2, CacheMissRate: float64(2) / float64(3) * 100, OriginBps: 0, CurSize: 30, LimitSize: 100}
+			stat.Vods[vod.Key(v1.VodID)] = &status.VODStatus{VODKey: v1.VodID, CurBps: 0, CurSessionCount: 0}
+			stat.Caches[vod.Key(v1.VodID)] = &status.CacheStatus{VODKey: v1.VodID, CacheHitCount: 1, CacheMissCount: 2, OriginBps: 0, CurSize: 30}
 		}},
 
 		{"StartSession sess3", StartSessionType, data.SessionEvent{
@@ -198,8 +198,8 @@ func TestLB_OneVOD(t *testing.T) {
 			Bps:       40,
 		}, false, stat, func() {
 			stat.Time = time.Date(2017, 1, 1, 0, 0, 15, 0, time.UTC)
-			stat.Vods[vod.Key(v1.VodID)] = &status.VODStatus{Bps: 40, SessionCount: 1}
-			stat.Caches[vod.Key(v1.VodID)] = &status.CacheStatus{CacheHitCount: 1, CacheMissCount: 2, CacheMissRate: float64(2) / float64(3) * 100, OriginBps: 0, CurSize: 30, LimitSize: 100}
+			stat.Vods[vod.Key(v1.VodID)] = &status.VODStatus{VODKey: v1.VodID, CurBps: 40, CurSessionCount: 1}
+			stat.Caches[vod.Key(v1.VodID)] = &status.CacheStatus{VODKey: v1.VodID, CacheHitCount: 1, CacheMissCount: 2, OriginBps: 0, CurSize: 30}
 		}},
 
 		{"StartChunk d.mpg-0, miss (sess3), cache full and evicted", StartChunkType, data.ChunkEvent{
@@ -213,8 +213,9 @@ func TestLB_OneVOD(t *testing.T) {
 		}, false, stat, func() {
 			stat.Time = time.Date(2017, 1, 1, 0, 0, 15, 1, time.UTC)
 			stat.Origin.Bps = 40
-			stat.Vods[vod.Key(v1.VodID)] = &status.VODStatus{Bps: 40, SessionCount: 1}
-			stat.Caches[vod.Key(v1.VodID)] = &status.CacheStatus{CacheHitCount: 1, CacheMissCount: 3, CacheMissRate: 75, OriginBps: 40, CurSize: 100, LimitSize: 100}
+			stat.AllCacheFull = true
+			stat.Vods[vod.Key(v1.VodID)] = &status.VODStatus{VODKey: v1.VodID, CurBps: 40, CurSessionCount: 1}
+			stat.Caches[vod.Key(v1.VodID)] = &status.CacheStatus{VODKey: v1.VodID, CacheHitCount: 1, CacheMissCount: 3, OriginBps: 40, CurSize: 100}
 		}},
 
 		{"EndChunk d.mpg-0, miss (sess3)", EndChunkType, data.ChunkEvent{
@@ -228,8 +229,9 @@ func TestLB_OneVOD(t *testing.T) {
 		}, false, stat, func() {
 			stat.Time = time.Date(2017, 1, 1, 0, 0, 15, 2, time.UTC)
 			stat.Origin.Bps = 0
-			stat.Vods[vod.Key(v1.VodID)] = &status.VODStatus{Bps: 40, SessionCount: 1}
-			stat.Caches[vod.Key(v1.VodID)] = &status.CacheStatus{CacheHitCount: 1, CacheMissCount: 3, CacheMissRate: 75, OriginBps: 0, CurSize: 100, LimitSize: 100}
+			stat.AllCacheFull = true
+			stat.Vods[vod.Key(v1.VodID)] = &status.VODStatus{VODKey: v1.VodID, CurBps: 40, CurSessionCount: 1}
+			stat.Caches[vod.Key(v1.VodID)] = &status.CacheStatus{VODKey: v1.VodID, CacheHitCount: 1, CacheMissCount: 3, OriginBps: 0, CurSize: 100}
 		}},
 
 		{"EndSession sess3", EndSessionType, data.SessionEvent{
@@ -240,9 +242,10 @@ func TestLB_OneVOD(t *testing.T) {
 			Bps:       40,
 		}, false, stat, func() {
 			stat.Origin.Bps = 0
+			stat.AllCacheFull = true
 			stat.Time = time.Date(2017, 1, 1, 0, 0, 15, 3, time.UTC)
-			stat.Vods[vod.Key(v1.VodID)] = &status.VODStatus{Bps: 0, SessionCount: 0}
-			stat.Caches[vod.Key(v1.VodID)] = &status.CacheStatus{CacheHitCount: 1, CacheMissCount: 3, CacheMissRate: 75, OriginBps: 0, CurSize: 100, LimitSize: 100}
+			stat.Vods[vod.Key(v1.VodID)] = &status.VODStatus{VODKey: v1.VodID, CurBps: 0, CurSessionCount: 0}
+			stat.Caches[vod.Key(v1.VodID)] = &status.CacheStatus{VODKey: v1.VodID, CacheHitCount: 1, CacheMissCount: 3, OriginBps: 0, CurSize: 100}
 		}},
 
 		{"StartSession sess4", StartSessionType, data.SessionEvent{
@@ -253,8 +256,9 @@ func TestLB_OneVOD(t *testing.T) {
 			Bps:       30,
 		}, false, stat, func() {
 			stat.Time = time.Date(2017, 1, 1, 0, 0, 18, 0, time.UTC)
-			stat.Vods[vod.Key(v1.VodID)] = &status.VODStatus{Bps: 30, SessionCount: 1}
-			stat.Caches[vod.Key(v1.VodID)] = &status.CacheStatus{CacheHitCount: 1, CacheMissCount: 3, CacheMissRate: 75, OriginBps: 0, CurSize: 100, LimitSize: 100}
+			stat.AllCacheFull = true
+			stat.Vods[vod.Key(v1.VodID)] = &status.VODStatus{VODKey: v1.VodID, CurBps: 30, CurSessionCount: 1}
+			stat.Caches[vod.Key(v1.VodID)] = &status.CacheStatus{VODKey: v1.VodID, CacheHitCount: 1, CacheMissCount: 3, OriginBps: 0, CurSize: 100}
 		}},
 
 		{"StartChunk a.mpg-1, miss (sess4), a.mpg-0 cached and evicted", StartChunkType, data.ChunkEvent{
@@ -268,8 +272,9 @@ func TestLB_OneVOD(t *testing.T) {
 		}, false, stat, func() {
 			stat.Time = time.Date(2017, 1, 1, 0, 0, 18, 1, time.UTC)
 			stat.Origin.Bps = 30
-			stat.Vods[vod.Key(v1.VodID)] = &status.VODStatus{Bps: 30, SessionCount: 1}
-			stat.Caches[vod.Key(v1.VodID)] = &status.CacheStatus{CacheHitCount: 1, CacheMissCount: 4, CacheMissRate: 80, OriginBps: 30, CurSize: 90, LimitSize: 100}
+			stat.AllCacheFull = true
+			stat.Vods[vod.Key(v1.VodID)] = &status.VODStatus{VODKey: v1.VodID, CurBps: 30, CurSessionCount: 1}
+			stat.Caches[vod.Key(v1.VodID)] = &status.CacheStatus{VODKey: v1.VodID, CacheHitCount: 1, CacheMissCount: 4, OriginBps: 30, CurSize: 90}
 		}},
 
 		{"EndChunk a.mpg-1, miss (sess4)", EndChunkType, data.ChunkEvent{
@@ -283,8 +288,9 @@ func TestLB_OneVOD(t *testing.T) {
 		}, false, stat, func() {
 			stat.Time = time.Date(2017, 1, 1, 0, 0, 21, 0, time.UTC)
 			stat.Origin.Bps = 0
-			stat.Vods[vod.Key(v1.VodID)] = &status.VODStatus{Bps: 30, SessionCount: 1}
-			stat.Caches[vod.Key(v1.VodID)] = &status.CacheStatus{CacheHitCount: 1, CacheMissCount: 4, CacheMissRate: 80, OriginBps: 0, CurSize: 90, LimitSize: 100}
+			stat.AllCacheFull = true
+			stat.Vods[vod.Key(v1.VodID)] = &status.VODStatus{VODKey: v1.VodID, CurBps: 30, CurSessionCount: 1}
+			stat.Caches[vod.Key(v1.VodID)] = &status.CacheStatus{VODKey: v1.VodID, CacheHitCount: 1, CacheMissCount: 4, OriginBps: 0, CurSize: 90}
 		}},
 
 		{"EndSession sess4", EndSessionType, data.SessionEvent{
@@ -295,9 +301,10 @@ func TestLB_OneVOD(t *testing.T) {
 			Bps:       30,
 		}, false, stat, func() {
 			stat.Origin.Bps = 0
+			stat.AllCacheFull = true
 			stat.Time = time.Date(2017, 1, 1, 0, 0, 21, 1, time.UTC)
-			stat.Vods[vod.Key(v1.VodID)] = &status.VODStatus{Bps: 0, SessionCount: 0}
-			stat.Caches[vod.Key(v1.VodID)] = &status.CacheStatus{CacheHitCount: 1, CacheMissCount: 4, CacheMissRate: 80, OriginBps: 0, CurSize: 90, LimitSize: 100}
+			stat.Vods[vod.Key(v1.VodID)] = &status.VODStatus{VODKey: v1.VodID, CurBps: 0, CurSessionCount: 0}
+			stat.Caches[vod.Key(v1.VodID)] = &status.CacheStatus{VODKey: v1.VodID, CacheHitCount: 1, CacheMissCount: 4, OriginBps: 0, CurSize: 90}
 		}},
 	}
 

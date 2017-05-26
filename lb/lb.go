@@ -131,29 +131,28 @@ func (lb *LB) MakeStatus(t time.Time) *status.Status {
 		Caches: make(map[vod.Key]*status.CacheStatus),
 	}
 	originBps := int64(0)
+	allCacheFull := true
 	for k, v := range lb.Caches {
 		originBps += v.OriginBps
 
 		st.Caches[k] = &status.CacheStatus{
+			VODKey:         string(k),
 			CacheHitCount:  v.HitCount,
 			CacheMissCount: v.MissCount,
 			OriginBps:      v.OriginBps,
 			CurSize:        v.CurSize,
-			LimitSize:      v.LimitSize,
+		}
+		if !v.IsCacheFull {
+			allCacheFull = false
 		}
 	}
+	st.AllCacheFull = allCacheFull
 	st.Origin.Bps = originBps
 	for k, v := range lb.VODs {
 		st.Vods[k] = &status.VODStatus{
-			Bps:          v.CurBps,
-			SessionCount: v.CurSessionCount,
-		}
-		miss := lb.Caches[k].MissCount
-		hit := lb.Caches[k].HitCount
-		if miss+hit == 0 {
-			st.Caches[k].CacheMissRate = 0
-		} else {
-			st.Caches[k].CacheMissRate = float64(float64(miss) / float64(miss+hit) * 100)
+			VODKey:          string(k),
+			CurBps:          v.CurBps,
+			CurSessionCount: v.CurSessionCount,
 		}
 	}
 	return st

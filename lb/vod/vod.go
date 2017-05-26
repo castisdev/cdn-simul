@@ -13,8 +13,10 @@ type Key string
 type VOD struct {
 	CurSessionCount   int64
 	LimitSessionCount int64
+	TotalSessionCount int64
 	CurBps            int64
 	LimitBps          int64
+	TotalBps          int64
 }
 
 // StartSession :

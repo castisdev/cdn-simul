@@ -1,16 +1,73 @@
 {
+    "hitResetTimes" : [
+        "2017-04-24 01:00:00.000"
+    ],
     "vods": [
         {
-            "vodid": "v1",
-            "storageSize": 6000000000000,
+            "vodid": "v-480-3.3TB-1",
+            "storageSize": 3600000000000,
+            "limitSession": 480,
+            "limitBps": 1800000000
+        },
+        {
+            "vodid": "v-480-3.3TB-2",
+            "storageSize": 3600000000000,
+            "limitSession": 480,
+            "limitBps": 1800000000
+        },
+        {
+            "vodid": "v-480-3.3TB-3",
+            "storageSize": 3600000000000,
+            "limitSession": 480,
+            "limitBps": 1800000000
+        },
+        {
+            "vodid": "v-480-3.3TB-4",
+            "storageSize": 3600000000000,
+            "limitSession": 480,
+            "limitBps": 1800000000
+        },
+        {
+            "vodid": "v-480-3.3TB-5",
+            "storageSize": 3600000000000,
+            "limitSession": 480,
+            "limitBps": 1800000000
+        },
+        {
+            "vodid": "v-800-6.6TB-1",
+            "storageSize": 7200000000000,
             "limitSession": 800,
             "limitBps": 3000000000
         },
         {
-            "vodid": "v2",
-            "storageSize": 6000000000000,
+            "vodid": "v-800-6.6TB-2",
+            "storageSize": 7200000000000,
             "limitSession": 800,
             "limitBps": 3000000000
+        },
+        {
+            "vodid": "v-1750-1.2TB-1",
+            "storageSize": 1300000000000,
+            "limitSession": 1750,
+            "limitBps": 7000000000
+        },
+        {
+            "vodid": "v-1750-1.2TB-2",
+            "storageSize": 1300000000000,
+            "limitSession": 1750,
+            "limitBps": 7000000000
+        },
+        {
+            "vodid": "v-1750-2TB-1",
+            "storageSize": 2200000000000,
+            "limitSession": 1750,
+            "limitBps": 7000000000
+        },
+        {
+            "vodid": "v-3750-2TB-1",
+            "storageSize": 2200000000000,
+            "limitSession": 3750,
+            "limitBps": 15000000000
         }
     ]
 }
