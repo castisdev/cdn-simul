@@ -25,11 +25,17 @@ var chunkSize float64 = 2 * 1024 * 1024
 
 func main() {
 	sdir := flag.String("sdir", "", "source directory")
+	assetOnly := flag.Bool("asset-only", false, "make only asset data")
 	flag.Parse()
 
-	db, err := leveldb.OpenFile("chunk.db", nil)
-	if err != nil {
-		log.Fatal(err)
+	var db *leveldb.DB
+	var err error
+
+	if *assetOnly == false {
+		db, err = leveldb.OpenFile("chunk.db", nil)
+		if err != nil {
+			log.Fatal(err)
+		}
 	}
 
 	files := listLogFiles(*sdir)
@@ -64,49 +70,56 @@ func main() {
 			smap := make(map[string]*sessionInfo)
 			batch := new(leveldb.Batch)
 			for i, lfi := range thisFiles {
-				doOneFile(lfi.fpath, smap, fmapLocal, batch)
+				doOneFile(lfi.fpath, smap, fmapLocal, batch, *assetOnly)
 				if i != 0 && i%10 == 0 {
-					err = db.Write(batch, nil)
-					if err != nil {
-						log.Fatal(err)
+					if *assetOnly == false {
+						err = db.Write(batch, nil)
+						if err != nil {
+							log.Fatal(err)
+						}
+						batch = new(leveldb.Batch)
 					}
-					batch = new(leveldb.Batch)
 					log.Printf("batched with %s, %d/%d\n", filepath.Base(lfi.fpath), i, len(thisFiles))
 				} else {
 					log.Printf("done with %s, %d/%d\n", filepath.Base(lfi.fpath), i, len(thisFiles))
 				}
 			}
-			err = db.Write(batch, nil)
-			if err != nil {
-				log.Fatal(err)
+			if *assetOnly == false {
+				err = db.Write(batch, nil)
+				if err != nil {
+					log.Fatal(err)
+				}
 			}
 			mu.Lock()
 			for k, v := range fmapLocal {
 				fmap[k] = v
 			}
+			mu.Unlock()
 			wg.Done()
 		}()
 	}
 
 	wg.Wait()
 
-	iter := db.NewIterator(nil, nil)
-	var scnt, ccnt int64
-	for iter.Next() {
-		reader := bytes.NewReader(iter.Value())
-		dec := gob.NewDecoder(reader)
-		var e glblog.Event
-		err := dec.Decode(&e)
-		if err != nil {
-			log.Fatal(err)
+	if *assetOnly == false {
+		iter := db.NewIterator(nil, nil)
+		var scnt, ccnt int64
+		for iter.Next() {
+			reader := bytes.NewReader(iter.Value())
+			dec := gob.NewDecoder(reader)
+			var e glblog.Event
+			err := dec.Decode(&e)
+			if err != nil {
+				log.Fatal(err)
+			}
+			if e.EventType == glblog.SessionClosed || e.EventType == glblog.SessionCreated {
+				scnt++
+			} else {
+				ccnt++
+			}
 		}
-		if e.EventType == glblog.SessionClosed || e.EventType == glblog.SessionCreated {
-			scnt++
-		} else {
-			ccnt++
-		}
+		fmt.Printf("session event length = %d, chunk event length = %d\n", scnt, ccnt)
 	}
-	fmt.Printf("session event length = %d, chunk event length = %d\n", scnt, ccnt)
 
 	fout, _ := os.Create("files.csv")
 	defer fout.Close()
@@ -212,7 +225,7 @@ func (s sessionInfo) String() string {
 
 var mu sync.Mutex
 
-func doOneFile(fpath string, smap map[string]*sessionInfo, fmap map[string]int, batch *leveldb.Batch) {
+func doOneFile(fpath string, smap map[string]*sessionInfo, fmap map[string]int, batch *leveldb.Batch, assetOnly bool) {
 	f, err := os.Open(fpath)
 	if err != nil {
 		log.Println(err)
@@ -257,9 +270,11 @@ func doOneFile(fpath string, smap map[string]*sessionInfo, fmap map[string]int, 
 				continue
 			}
 
-			smap[si.sid] = si
+			if assetOnly == false {
+				smap[si.sid] = si
+			}
 			fmap[si.filename] = si.bandwidth
-		} else if strings.Contains(line, "OnTeardownNotification") {
+		} else if strings.Contains(line, "OnTeardownNotification") && assetOnly == false {
 			strs := strings.SplitN(line, ",", 8)
 			strEnded := strs[2] + " " + strs[3]
 
