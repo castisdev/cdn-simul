@@ -1,3 +1,6 @@
 /.vscode/
 debug
 glb-log-manip/glb-log-manip
+glb-log-manip/chunk.db/
+csv-exporter/csv-exporter
+glb-log-manip/files.csv

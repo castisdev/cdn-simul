@@ -17,6 +17,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/castisdev/cdn-simul/glblog"
 	"github.com/syndtr/goleveldb/leveldb"
 )
 
@@ -94,12 +95,12 @@ func main() {
 	for iter.Next() {
 		reader := bytes.NewReader(iter.Value())
 		dec := gob.NewDecoder(reader)
-		var e event
+		var e glblog.Event
 		err := dec.Decode(&e)
 		if err != nil {
 			log.Fatal(err)
 		}
-		if e.EventType == sessionClosed || e.EventType == sessionCreated {
+		if e.EventType == glblog.SessionClosed || e.EventType == glblog.SessionCreated {
 			scnt++
 		} else {
 			ccnt++
@@ -270,10 +271,10 @@ func doOneFile(fpath string, smap map[string]*sessionInfo, fmap map[string]int, 
 				delete(smap, sid)
 				si.ended, _ = time.ParseInLocation(layout, strEnded, loc)
 				{
-					c := event{
+					c := glblog.Event{
 						SID:       si.sid,
 						EventTime: si.started,
-						EventType: sessionCreated,
+						EventType: glblog.SessionCreated,
 						Filename:  si.filename,
 					}
 					var buf bytes.Buffer
@@ -285,10 +286,10 @@ func doOneFile(fpath string, smap map[string]*sessionInfo, fmap map[string]int, 
 					batch.Put([]byte(c.EventTime.Format(layout)+c.SID+strconv.Itoa(int(c.EventType))), buf.Bytes())
 				}
 				{
-					c := event{
+					c := glblog.Event{
 						SID:       si.sid,
 						EventTime: si.ended,
-						EventType: sessionClosed,
+						EventType: glblog.SessionClosed,
 						Filename:  si.filename,
 					}
 					var buf bytes.Buffer
@@ -304,12 +305,12 @@ func doOneFile(fpath string, smap map[string]*sessionInfo, fmap map[string]int, 
 				i := 0
 				for t := si.started; si.ended.Sub(t) > 0; t, i = t.Add(chunkDur), i+1 {
 					{
-						c := event{
+						c := glblog.Event{
 							SID:       si.sid,
 							EventTime: t,
 							Filename:  si.filename,
 							Index:     i,
-							EventType: chunkCreated,
+							EventType: glblog.ChunkCreated,
 						}
 						var buf bytes.Buffer
 						enc := gob.NewEncoder(&buf)
@@ -324,12 +325,12 @@ func doOneFile(fpath string, smap map[string]*sessionInfo, fmap map[string]int, 
 						if si.ended.Sub(et) < 0 {
 							et = si.ended
 						}
-						c := event{
+						c := glblog.Event{
 							SID:       si.sid,
 							EventTime: et,
 							Filename:  si.filename,
 							Index:     i,
-							EventType: chunkClosed,
+							EventType: glblog.ChunkClosed,
 						}
 						var buf bytes.Buffer
 						enc := gob.NewEncoder(&buf)
@@ -347,54 +348,4 @@ func doOneFile(fpath string, smap map[string]*sessionInfo, fmap map[string]int, 
 	if err := s.Err(); err != nil {
 		log.Println(err)
 	}
-}
-
-////////////////////////////////////////////////////////////////////////////////
-
-type eventType int
-
-func (et eventType) String() string {
-	switch et {
-	case sessionCreated:
-		return "s created"
-	case sessionClosed:
-		return "s closed"
-	case chunkCreated:
-		return "c created"
-	case chunkClosed:
-		return "c closed"
-	default:
-		return "unknown"
-	}
-}
-
-const (
-	chunkClosed   eventType = iota
-	sessionClosed eventType = iota
-	sessionCreated
-	chunkCreated
-)
-
-type event struct {
-	SID       string
-	EventTime time.Time
-	Filename  string
-	Index     int
-	EventType eventType
-}
-
-func (e event) String() string {
-	return fmt.Sprintf("%s, %s, %9v, %4d, %s", e.EventTime.Format(layout), e.SID, e.EventType, e.Index, e.Filename)
-}
-
-type eventSorter []event
-
-func (lis eventSorter) Len() int {
-	return len(lis)
-}
-func (lis eventSorter) Swap(i, j int) {
-	lis[i], lis[j] = lis[j], lis[i]
-}
-func (lis eventSorter) Less(i, j int) bool {
-	return lis[i].EventTime.Before(lis[j].EventTime)
 }
