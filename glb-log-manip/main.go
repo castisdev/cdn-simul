@@ -43,7 +43,12 @@ func main() {
 
 	fmap := make(map[string]int)
 
-	n := 2 //runtime.GOMAXPROCS(0) + 2
+	var n int
+	if files[len(files)-1].date.Sub(files[0].date) > 7*24*time.Hour {
+		n = 2 //runtime.GOMAXPROCS(0) + 2
+	} else {
+		n = 1
+	}
 	size := (len(files) + n - 1) / n
 	var wg sync.WaitGroup
 	for i := 0; i < n; i++ {
