@@ -90,9 +90,10 @@ func readEvent(iter iterator.Iterator) *event {
 }
 
 type stat struct {
-	nextHitResetIdx int
-	maxOriginBps    int64
-	vods            map[string]vodStat
+	nextHitResetIdx     int
+	maxOriginBps        int64
+	vods                map[string]vodStat
+	hitResetWhenAllFull bool
 }
 
 type vodStat struct {
@@ -132,6 +133,18 @@ func updateStat(cfg *data.Config, evt *event, st *status.Status, gst *stat) {
 	if gst.nextHitResetIdx >= 0 && time.Time(cfg.HitResetTimes[gst.nextHitResetIdx]).Before(evt.EventTime) {
 		hitReset = true
 		log.Println("hit rate reset!!!")
+
+		defer func() {
+			gst.nextHitResetIdx++
+			if gst.nextHitResetIdx == len(cfg.HitResetTimes) {
+				gst.nextHitResetIdx = -2
+			}
+		}()
+	}
+	if st.AllCacheFull && !gst.hitResetWhenAllFull {
+		hitReset = true
+		log.Println("all cache full, hit rate reset!!!")
+		gst.hitResetWhenAllFull = true
 	}
 
 	for _, v := range st.Vods {
@@ -158,18 +171,19 @@ func updateStat(cfg *data.Config, evt *event, st *status.Status, gst *stat) {
 			gst.vods[v.VODKey] = s
 		}
 	}
-	if hitReset {
-		gst.nextHitResetIdx++
-		if gst.nextHitResetIdx == len(cfg.HitResetTimes) {
-			gst.nextHitResetIdx = -2
-		}
-	}
 }
 
-func logStatus(cfg *data.Config, st *status.Status, gst *stat) {
-	str := fmt.Sprintf("\n%s all-full:%v originBps(cur:%v/max:%v)\n",
-		st.Time.Format(layout), st.AllCacheFull, humanize.Bytes(uint64(st.Origin.Bps)), humanize.Bytes(uint64(gst.maxOriginBps)))
+func logStatus(cfg *data.Config, st *status.Status, gst *stat, ev *event) {
+	str := ""
+	totalHit := int64(0)
+	totalMiss := int64(0)
 
+	hitRateFn := func(hit, miss int64) int {
+		if hit == 0 {
+			return 0
+		}
+		return int(float64(hit) * 100 / float64(hit+miss))
+	}
 	// cfg의 VOD 순으로 logging
 	for _, cc := range cfg.VODs {
 		v := st.Vods[vod.Key(cc.VodID)]
@@ -178,29 +192,41 @@ func logStatus(cfg *data.Config, st *status.Status, gst *stat) {
 
 		hit := cache.CacheHitCount - gst.vods[v.VODKey].hitCountWhenReset
 		miss := cache.CacheMissCount - gst.vods[v.VODKey].missCountWhenReset
-		str += fmt.Sprintf("[%s session(%v/%v/%v%%/max:%v%%) bps(%v/%v/%v%%/max:%v%%) disk(%v/%v/%v%%) hit(%v %%) origin(%v)]\n",
+		totalHit += hit
+		totalMiss += miss
+		str += fmt.Sprintf("%s [%15s session(%4v/%4v/%3v%%/max:%3v%%) bps(%7v/%7v/%3v%%/max:%3v%%) disk(%8v/%8v/%3v%%) hit(%5v/%5v: %3v %%) origin(%6v)]\n",
+			st.Time.Format(layout),
 			v.VODKey, v.CurSessionCount, vc.LimitSession, int(float64(v.CurSessionCount)*100/float64(vc.LimitSession)), gst.vods[v.VODKey].maxSessionPercent,
 			humanize.Bytes(uint64(v.CurBps)), humanize.Bytes(uint64(vc.LimitBps)), int(float64(v.CurBps)*100/float64(vc.LimitBps)), gst.vods[v.VODKey].maxBpsPercent,
 			humanize.IBytes(uint64(cache.CurSize)), humanize.IBytes(uint64(vc.StorageSize)), int(float64(cache.CurSize)*100/float64(vc.StorageSize)),
-			int(float64(hit)*100/float64(hit+miss)),
+			hit, hit+miss, hitRateFn(hit, miss),
 			humanize.Bytes(uint64(cache.OriginBps)))
-
 	}
-	log.Println(str)
+
+	str = fmt.Sprintf("\n%s all-full:%v originBps(cur:%4v/max:%4v) hit(%4v/%4v: %3v %%)\n",
+		st.Time.Format(layout),
+		st.AllCacheFull, humanize.Bytes(uint64(st.Origin.Bps)), humanize.Bytes(uint64(gst.maxOriginBps)),
+		totalHit, totalHit+totalMiss, hitRateFn(totalHit, totalMiss)) + str
+	fmt.Println(str)
 }
 
 func main() {
-	var cfgFile, dbFile, fileCsvFile, cpuprofile string
-	var readEventCount, logPeriod int
+	var cfgFile, dbFile, fileCsvFile, cpuprofile, lp string
+	var readEventCount int
 
 	flag.StringVar(&cfgFile, "cfg", "cdn-simul.json", "config file")
 	flag.StringVar(&dbFile, "db", "chunk.db", "event db")
 	flag.StringVar(&fileCsvFile, "file-csv", "files.csv", "event db")
 	flag.IntVar(&readEventCount, "event-count", 0, "event count to process. if 0, process all event")
 	flag.StringVar(&cpuprofile, "cpuprofile", "", "write cpu profile")
-	flag.IntVar(&logPeriod, "log-period", 0, "status logging period (second). if 0, print log after every event")
+	flag.StringVar(&lp, "log-period", "0s", "status logging period (second). if 0, print log after every event")
 
 	flag.Parse()
+
+	logPeriod, err := time.ParseDuration(lp)
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	if cpuprofile != "" {
 		if err := profile.StartCPUProfile(cpuprofile); err != nil {
@@ -257,12 +283,12 @@ func main() {
 	iter := db.NewIterator(nil, nil)
 
 	now := time.Now()
-	logT := time.Now()
-	evtCount := 0
+	var nextLogT time.Time
+	evtCount := int64(0)
 	gStat := &stat{vods: make(map[string]vodStat), nextHitResetIdx: -1}
 	for {
 		evtCount++
-		if readEventCount != 0 && evtCount > readEventCount {
+		if readEventCount != 0 && int(evtCount) > readEventCount {
 			break
 		}
 		ev := readEvent(iter)
@@ -271,6 +297,9 @@ func main() {
 		}
 		if logPeriod == 0 {
 			log.Printf("%s\n", ev)
+		}
+		if evtCount == 1 {
+			nextLogT = ev.EventTime
 		}
 
 		var st *status.Status
@@ -318,13 +347,18 @@ func main() {
 		}
 		updateStat(&cfg, ev, st, gStat)
 		if ev.EventType == sessionCreated {
-			if logPeriod == 0 || time.Since(logT) > (time.Duration(logPeriod)*time.Second) {
-				logStatus(&cfg, st, gStat)
-				logT = time.Now()
+			if logPeriod == 0 || ev.EventTime.After(nextLogT) {
+				logStatus(&cfg, st, gStat, ev)
+				for {
+					nextLogT = nextLogT.Add(logPeriod)
+					if nextLogT.After(ev.EventTime) {
+						break
+					}
+				}
 			}
 		} else {
 			if logPeriod == 0 {
-				logStatus(&cfg, st, gStat)
+				logStatus(&cfg, st, gStat, ev)
 			}
 		}
 	}
