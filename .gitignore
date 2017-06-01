@@ -7,3 +7,4 @@ glb-log-manip/chunk.db/
 csv-exporter/csv-exporter
 glb-log-manip/files.csv
 csv-exporter/*.csv
+glb-log-filter/glb-log-filter

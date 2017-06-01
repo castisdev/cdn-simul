@@ -6,10 +6,8 @@ import (
 	"encoding/gob"
 	"flag"
 	"fmt"
-	"io/ioutil"
 	"log"
 	"os"
-	"path"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -18,6 +16,7 @@ import (
 	"time"
 
 	"github.com/castisdev/cdn-simul/glblog"
+	humanize "github.com/dustin/go-humanize"
 	"github.com/syndtr/goleveldb/leveldb"
 )
 
@@ -38,13 +37,13 @@ func main() {
 		}
 	}
 
-	files := listLogFiles(*sdir)
-	sort.Sort(logFileInfoSorter(files))
+	files := glblog.ListLogFiles(*sdir)
+	sort.Sort(glblog.LogFileInfoSorter(files))
 
 	fmap := make(map[string]int)
 
 	var n int
-	if files[len(files)-1].date.Sub(files[0].date) > 7*24*time.Hour {
+	if files[len(files)-1].Date.Sub(files[0].Date) > 7*24*time.Hour {
 		n = 2 //runtime.GOMAXPROCS(0) + 2
 	} else {
 		n = 1
@@ -56,13 +55,13 @@ func main() {
 		if end > len(files) {
 			end = len(files)
 		}
-		thisFiles := make([]logFileInfo, end-begin)
+		thisFiles := make([]glblog.LogFileInfo, end-begin)
 		copy(thisFiles, files[begin:end])
-		thisDate := thisFiles[len(thisFiles)-1].date
+		thisDate := thisFiles[len(thisFiles)-1].Date
 		if i != n-1 {
 			nextDate := thisDate.Add(time.Hour * 24)
 			for j := end; true; j++ {
-				if files[j].date.Equal(thisDate) || files[j].date.Equal(nextDate) {
+				if files[j].Date.Equal(thisDate) || files[j].Date.Equal(nextDate) {
 					thisFiles = append(thisFiles, files[j])
 				} else {
 					break
@@ -73,27 +72,9 @@ func main() {
 		go func() {
 			fmapLocal := make(map[string]int)
 			smap := make(map[string]*sessionInfo)
-			batch := new(leveldb.Batch)
 			for i, lfi := range thisFiles {
-				doOneFile(lfi.fpath, smap, fmapLocal, batch, *assetOnly)
-				if i != 0 && i%10 == 0 {
-					if *assetOnly == false {
-						err = db.Write(batch, nil)
-						if err != nil {
-							log.Fatal(err)
-						}
-						batch = new(leveldb.Batch)
-					}
-					log.Printf("batched with %s, %d/%d\n", filepath.Base(lfi.fpath), i, len(thisFiles))
-				} else {
-					log.Printf("done with %s, %d/%d\n", filepath.Base(lfi.fpath), i, len(thisFiles))
-				}
-			}
-			if *assetOnly == false {
-				err = db.Write(batch, nil)
-				if err != nil {
-					log.Fatal(err)
-				}
+				doOneFile(lfi.Fpath, smap, fmapLocal, db, *assetOnly)
+				log.Printf("done with %s, %d/%d\n", filepath.Base(lfi.Fpath), i+1, len(thisFiles))
 			}
 			mu.Lock()
 			for k, v := range fmapLocal {
@@ -105,110 +86,14 @@ func main() {
 	}
 
 	wg.Wait()
-
-	if *assetOnly == false {
-		iter := db.NewIterator(nil, nil)
-		var scnt, ccnt int64
-		for iter.Next() {
-			reader := bytes.NewReader(iter.Value())
-			dec := gob.NewDecoder(reader)
-			var e glblog.Event
-			err := dec.Decode(&e)
-			if err != nil {
-				log.Fatal(err)
-			}
-			if e.EventType == glblog.SessionClosed || e.EventType == glblog.SessionCreated {
-				scnt++
-			} else {
-				ccnt++
-			}
-		}
-		fmt.Printf("session event length = %d, chunk event length = %d\n", scnt, ccnt)
-	}
+	log.Println("all events was writed")
 
 	fout, _ := os.Create("files.csv")
 	defer fout.Close()
 	for k, v := range fmap {
 		fmt.Fprintf(fout, "%s, %d\n", k, v)
 	}
-}
-
-type logFileInfo struct {
-	fpath string
-	date  time.Time
-	index int
-}
-
-func (l logFileInfo) String() string {
-	return fmt.Sprintf("%s, %s, %d", l.fpath, l.date.Format(dateLayout), l.index)
-}
-
-type logFileInfoSorter []logFileInfo
-
-func (lis logFileInfoSorter) Len() int {
-	return len(lis)
-}
-func (lis logFileInfoSorter) Swap(i, j int) {
-	lis[i], lis[j] = lis[j], lis[i]
-}
-func (lis logFileInfoSorter) Less(i, j int) bool {
-	if lis[i].date.Equal(lis[j].date) == false {
-		return lis[i].date.Before(lis[j].date)
-	}
-	return lis[i].index < lis[j].index
-}
-
-func listLogFiles(sdir string) []logFileInfo {
-	files, err := ioutil.ReadDir(sdir)
-	if err != nil {
-		log.Fatal(err, sdir)
-	}
-
-	loc, _ := time.LoadLocation("Local")
-	var logs []logFileInfo
-	for _, f := range files {
-		if f.IsDir() {
-			fpath := path.Join(sdir, f.Name())
-			logs = append(logs, listLogFiles(fpath)...)
-			continue
-		}
-
-		if strings.HasSuffix(f.Name(), "_GLB.log") {
-			li := logFileInfo{fpath: path.Join(sdir, f.Name())}
-			strs := strings.Split(f.Name(), "_")
-			if len(strs) != 2 {
-				log.Println("invalid filename, ", li.fpath)
-				continue
-			}
-
-			if strings.Contains(f.Name(), "[") {
-				strs2 := strings.FieldsFunc(strs[0], func(c rune) bool {
-					return c == '[' || c == ']'
-				})
-				li.date, err = time.ParseInLocation(dateLayout, strs2[0], loc)
-				if err != nil {
-					log.Println("invalid filename, ", li.fpath, err)
-					continue
-				}
-				li.index, err = strconv.Atoi(strs2[1])
-				if err != nil {
-					log.Println("invalid filename, ", li.fpath, err)
-					continue
-				}
-			} else {
-				li.date, err = time.ParseInLocation(dateLayout, strs[0], loc)
-				if err != nil {
-					log.Println("invalid filename, ", li.fpath, err)
-					continue
-				}
-				li.index = 0
-			}
-
-			logs = append(logs, li)
-		}
-	}
-
-	return logs
+	log.Println("bye")
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -230,7 +115,7 @@ func (s sessionInfo) String() string {
 
 var mu sync.Mutex
 
-func doOneFile(fpath string, smap map[string]*sessionInfo, fmap map[string]int, batch *leveldb.Batch, assetOnly bool) {
+func doOneFile(fpath string, smap map[string]*sessionInfo, fmap map[string]int, db *leveldb.DB, assetOnly bool) {
 	f, err := os.Open(fpath)
 	if err != nil {
 		log.Println(err)
@@ -239,8 +124,12 @@ func doOneFile(fpath string, smap map[string]*sessionInfo, fmap map[string]int, 
 	defer f.Close()
 
 	loc, _ := time.LoadLocation("Local")
+	batch := new(leveldb.Batch)
 
 	s := bufio.NewScanner(f)
+	cnt := 0
+	totalCnt := 0
+	var lastEvent glblog.Event
 	for s.Scan() {
 		line := s.Text()
 		if strings.Contains(line, "cueTone") {
@@ -304,6 +193,9 @@ func doOneFile(fpath string, smap map[string]*sessionInfo, fmap map[string]int, 
 						log.Fatal(err)
 					}
 					batch.Put([]byte(c.EventTime.Format(layout)+c.SID+strconv.Itoa(int(c.EventType))), buf.Bytes())
+					cnt++
+					totalCnt++
+					lastEvent = c
 				}
 				{
 					c := glblog.Event{
@@ -319,6 +211,9 @@ func doOneFile(fpath string, smap map[string]*sessionInfo, fmap map[string]int, 
 						log.Fatal(err)
 					}
 					batch.Put([]byte(c.EventTime.Format(layout)+c.SID+strconv.Itoa(int(c.EventType))), buf.Bytes())
+					cnt++
+					totalCnt++
+					lastEvent = c
 				}
 
 				chunkDur := time.Duration(chunkSize / (float64(si.bandwidth) / 8) * float64(time.Second.Nanoseconds()))
@@ -339,6 +234,9 @@ func doOneFile(fpath string, smap map[string]*sessionInfo, fmap map[string]int, 
 							log.Fatal(err)
 						}
 						batch.Put([]byte(c.EventTime.Format(layout)+c.SID+strconv.Itoa(int(c.EventType))), buf.Bytes())
+						cnt++
+						totalCnt++
+						lastEvent = c
 					}
 					{
 						et := t.Add(chunkDur)
@@ -359,10 +257,31 @@ func doOneFile(fpath string, smap map[string]*sessionInfo, fmap map[string]int, 
 							log.Fatal(err)
 						}
 						batch.Put([]byte(c.EventTime.Format(layout)+c.SID+strconv.Itoa(int(c.EventType))), buf.Bytes())
+						cnt++
+						totalCnt++
+						lastEvent = c
 					}
 				}
 			}
 		}
+
+		if assetOnly == false && cnt > 1000000 {
+			err = db.Write(batch, nil)
+			if err != nil {
+				log.Fatal(err)
+			}
+			log.Printf("batched with %s, %s events, etime[%s]\n", filepath.Base(fpath), humanize.Comma(int64(cnt)), lastEvent.EventTime)
+			batch = new(leveldb.Batch)
+			cnt = 0
+		}
+	}
+
+	if assetOnly == false {
+		err = db.Write(batch, nil)
+		if err != nil {
+			log.Fatal(err)
+		}
+		log.Printf("batched with %s, %s events, etime[%s]\n", filepath.Base(fpath), humanize.Comma(int64(cnt)), lastEvent.EventTime)
 	}
 
 	if err := s.Err(); err != nil {
