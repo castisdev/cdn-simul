@@ -10,7 +10,10 @@ import (
 	"io"
 	"io/ioutil"
 	"log"
+	"net"
+	"net/http"
 	"os"
+	"runtime/pprof"
 	"strconv"
 	"strings"
 	"time"
@@ -173,7 +176,53 @@ func updateStat(cfg *data.Config, evt *event, st *status.Status, gst *stat) {
 	}
 }
 
-func logStatus(cfg *data.Config, st *status.Status, gst *stat, ev *event) {
+func writeToDB(cfg *data.Config, st *status.Status, gst *stat, ev *event) {
+	str := ""
+	t := ev.EventTime.UnixNano()
+	for _, v := range st.Caches {
+		vcfg := findConfig(cfg, v.VODKey)
+		vod := st.Vods[vod.Key(v.VODKey)]
+		str += fmt.Sprintf("cache,vod=%s hit=%d,miss=%d,originbps=%d,disk=%d,disklimit=%d %d\n",
+			v.VODKey, v.CacheHitCount, v.CacheMissCount, v.OriginBps, v.CurSize, vcfg.StorageSize, t)
+		str += fmt.Sprintf("vod,vod=%s bps=%d,bpslimit=%d,session=%d,sessionlimit=%d %d\n",
+			v.VODKey, vod.CurBps, vcfg.LimitBps, vod.CurSessionCount, vcfg.LimitSession, t)
+	}
+
+	reqBody := bytes.NewBufferString(str)
+	cl := &http.Client{
+		Timeout: 3 * time.Second,
+		// http.DefaultTransport + (DisableKeepAlives: true)
+		Transport: &http.Transport{
+			Proxy: http.ProxyFromEnvironment,
+			Dial: (&net.Dialer{
+				Timeout:   30 * time.Second,
+				KeepAlive: 30 * time.Second,
+			}).Dial,
+			TLSHandshakeTimeout:   10 * time.Second,
+			ExpectContinueTimeout: 1 * time.Second,
+			DisableKeepAlives:     true,
+		},
+	}
+
+	req, err := http.NewRequest("POST", "http://"+dbAddr+"/write?db="+dbName, reqBody)
+	if err != nil {
+		log.Printf("failed to creat request, %v\n", err)
+		return
+	}
+	resp, err := cl.Do(req)
+	if err != nil {
+		log.Printf("failed to post request, %v\n", err)
+		return
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusNoContent {
+		b, _ := ioutil.ReadAll(resp.Body)
+		log.Printf("failed to post request, status:%s, body:%s\n", resp.Status, string(b))
+		return
+	}
+}
+
+func logStatus(cfg *data.Config, st *status.Status, gst *stat, ev *event, writeDB bool) {
 	str := ""
 	totalHit := int64(0)
 	totalMiss := int64(0)
@@ -208,18 +257,30 @@ func logStatus(cfg *data.Config, st *status.Status, gst *stat, ev *event) {
 		st.AllCacheFull, humanize.Bytes(uint64(st.Origin.Bps)), humanize.Bytes(uint64(gst.maxOriginBps)),
 		totalHit, totalHit+totalMiss, hitRateFn(totalHit, totalMiss)) + str
 	fmt.Println(str)
+
+	if dbAddr != "" {
+		writeToDB(cfg, st, gst, ev)
+	}
 }
 
+var dbAddr, dbUser, dbPass, dbName string
+
 func main() {
-	var cfgFile, dbFile, fileCsvFile, cpuprofile, lp string
+	var cfgFile, dbFile, fileCsvFile, cpuprofile, memprofile, lp string
 	var readEventCount int
+	var writeDB bool
 
 	flag.StringVar(&cfgFile, "cfg", "cdn-simul.json", "config file")
 	flag.StringVar(&dbFile, "db", "chunk.db", "event db")
 	flag.StringVar(&fileCsvFile, "file-csv", "files.csv", "event db")
 	flag.IntVar(&readEventCount, "event-count", 0, "event count to process. if 0, process all event")
 	flag.StringVar(&cpuprofile, "cpuprofile", "", "write cpu profile")
+	flag.StringVar(&memprofile, "memprofile", "", "write memory profile")
 	flag.StringVar(&lp, "log-period", "0s", "status logging period (second). if 0, print log after every event")
+	flag.StringVar(&dbAddr, "db-addr", "", "DB address. if empty, not use DB. ex: localhost:8086")
+	flag.StringVar(&dbUser, "db-user", "", "DB username")
+	flag.StringVar(&dbPass, "db-pass", "", "DB password")
+	flag.StringVar(&dbName, "db-name", "mydb", "database name")
 
 	flag.Parse()
 
@@ -348,7 +409,7 @@ func main() {
 		updateStat(&cfg, ev, st, gStat)
 		if ev.EventType == sessionCreated {
 			if logPeriod == 0 || ev.EventTime.After(nextLogT) {
-				logStatus(&cfg, st, gStat, ev)
+				logStatus(&cfg, st, gStat, ev, writeDB)
 				for {
 					nextLogT = nextLogT.Add(logPeriod)
 					if nextLogT.After(ev.EventTime) {
@@ -358,10 +419,19 @@ func main() {
 			}
 		} else {
 			if logPeriod == 0 {
-				logStatus(&cfg, st, gStat, ev)
+				logStatus(&cfg, st, gStat, ev, writeDB)
 			}
 		}
 	}
 
 	log.Printf("completed. elapsed:%v\n", time.Since(now))
+
+	if memprofile != "" {
+		f, err := os.Create(memprofile)
+		if err != nil {
+			log.Fatalf("failed to start memory profile, %v", err)
+		}
+		pprof.WriteHeapProfile(f)
+		defer f.Close()
+	}
 }
