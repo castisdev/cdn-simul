@@ -44,7 +44,7 @@ func main() {
 
 	var n int
 	if files[len(files)-1].Date.Sub(files[0].Date) > 7*24*time.Hour {
-		n = 2 //runtime.GOMAXPROCS(0) + 2
+		n = 3 //runtime.GOMAXPROCS(0) + 2
 	} else {
 		n = 1
 	}
@@ -129,7 +129,7 @@ func doOneFile(fpath string, smap map[string]*sessionInfo, fmap map[string]int, 
 	s := bufio.NewScanner(f)
 	cnt := 0
 	totalCnt := 0
-	var lastEvent glblog.Event
+	var lastEvent *glblog.Event
 	for s.Scan() {
 		line := s.Text()
 		if strings.Contains(line, "cueTone") {
@@ -180,86 +180,32 @@ func doOneFile(fpath string, smap map[string]*sessionInfo, fmap map[string]int, 
 				delete(smap, sid)
 				si.ended, _ = time.ParseInLocation(layout, strEnded, loc)
 				{
-					c := glblog.Event{
-						SID:       si.sid,
-						EventTime: si.started,
-						EventType: glblog.SessionCreated,
-						Filename:  si.filename,
-					}
-					var buf bytes.Buffer
-					enc := gob.NewEncoder(&buf)
-					err := enc.Encode(c)
-					if err != nil {
-						log.Fatal(err)
-					}
-					batch.Put([]byte(c.EventTime.Format(layout)+c.SID+strconv.Itoa(int(c.EventType))), buf.Bytes())
+					lastEvent = writeEvent(batch, si.sid, si.started, glblog.SessionCreated, si.filename, 0)
 					cnt++
 					totalCnt++
-					lastEvent = c
 				}
 				{
-					c := glblog.Event{
-						SID:       si.sid,
-						EventTime: si.ended,
-						EventType: glblog.SessionClosed,
-						Filename:  si.filename,
-					}
-					var buf bytes.Buffer
-					enc := gob.NewEncoder(&buf)
-					err := enc.Encode(c)
-					if err != nil {
-						log.Fatal(err)
-					}
-					batch.Put([]byte(c.EventTime.Format(layout)+c.SID+strconv.Itoa(int(c.EventType))), buf.Bytes())
+					lastEvent = writeEvent(batch, si.sid, si.ended, glblog.SessionClosed, si.filename, 0)
 					cnt++
 					totalCnt++
-					lastEvent = c
 				}
 
 				chunkDur := time.Duration(chunkSize / (float64(si.bandwidth) / 8) * float64(time.Second.Nanoseconds()))
 				i := 0
 				for t := si.started; si.ended.Sub(t) > 0; t, i = t.Add(chunkDur), i+1 {
 					{
-						c := glblog.Event{
-							SID:       si.sid,
-							EventTime: t,
-							Filename:  si.filename,
-							Index:     i,
-							EventType: glblog.ChunkCreated,
-						}
-						var buf bytes.Buffer
-						enc := gob.NewEncoder(&buf)
-						err := enc.Encode(c)
-						if err != nil {
-							log.Fatal(err)
-						}
-						batch.Put([]byte(c.EventTime.Format(layout)+c.SID+strconv.Itoa(int(c.EventType))), buf.Bytes())
+						lastEvent = writeEvent(batch, si.sid, t, glblog.ChunkCreated, si.filename, i)
 						cnt++
 						totalCnt++
-						lastEvent = c
 					}
 					{
 						et := t.Add(chunkDur)
 						if si.ended.Sub(et) < 0 {
 							et = si.ended
 						}
-						c := glblog.Event{
-							SID:       si.sid,
-							EventTime: et,
-							Filename:  si.filename,
-							Index:     i,
-							EventType: glblog.ChunkClosed,
-						}
-						var buf bytes.Buffer
-						enc := gob.NewEncoder(&buf)
-						err := enc.Encode(c)
-						if err != nil {
-							log.Fatal(err)
-						}
-						batch.Put([]byte(c.EventTime.Format(layout)+c.SID+strconv.Itoa(int(c.EventType))), buf.Bytes())
+						lastEvent = writeEvent(batch, si.sid, et, glblog.ChunkClosed, si.filename, i)
 						cnt++
 						totalCnt++
-						lastEvent = c
 					}
 				}
 			}
@@ -287,4 +233,22 @@ func doOneFile(fpath string, smap map[string]*sessionInfo, fmap map[string]int, 
 	if err := s.Err(); err != nil {
 		log.Println(err)
 	}
+}
+
+func writeEvent(batch *leveldb.Batch, sid string, tm time.Time, etype glblog.EventType, fname string, idx int) *glblog.Event {
+	c := glblog.Event{
+		SID:       sid,
+		EventTime: tm,
+		Filename:  fname,
+		Index:     idx,
+		EventType: etype,
+	}
+	var buf bytes.Buffer
+	enc := gob.NewEncoder(&buf)
+	err := enc.Encode(c)
+	if err != nil {
+		log.Fatal(err)
+	}
+	batch.Put([]byte(c.EventTime.Format(layout)+c.SID+strconv.Itoa(int(c.EventType))), buf.Bytes())
+	return &c
 }

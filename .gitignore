@@ -8,3 +8,7 @@ csv-exporter/csv-exporter
 glb-log-manip/files.csv
 csv-exporter/*.csv
 glb-log-filter/glb-log-filter
+vod-log-manip/elog.db/
+vod-log-manip/sid.db/
+vod-log-manip/elog.csv
+vod-log-manip/resetup.csv
