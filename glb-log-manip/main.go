@@ -7,6 +7,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"math"
 	"os"
 	"path/filepath"
 	"sort"
@@ -16,6 +17,7 @@ import (
 	"time"
 
 	"github.com/castisdev/cdn-simul/glblog"
+	"github.com/castisdev/cdn-simul/vodlog"
 	humanize "github.com/dustin/go-humanize"
 	"github.com/syndtr/goleveldb/leveldb"
 )
@@ -24,6 +26,7 @@ var chunkSize float64 = 2 * 1024 * 1024
 
 func main() {
 	sdir := flag.String("sdir", "", "source directory")
+	sdbfn := flag.String("sdb", "sid.db", "session db")
 	assetOnly := flag.Bool("asset-only", false, "make only asset data")
 	flag.Parse()
 
@@ -31,10 +34,15 @@ func main() {
 	var err error
 
 	if *assetOnly == false {
-		db, err = leveldb.OpenFile("chunk.db", nil)
+		db, err = leveldb.OpenFile("session.db", nil)
 		if err != nil {
 			log.Fatal(err)
 		}
+	}
+
+	sdb, err := leveldb.OpenFile(*sdbfn, nil)
+	if err != nil {
+		log.Fatal(err)
 	}
 
 	files := glblog.ListLogFiles(*sdir)
@@ -44,7 +52,7 @@ func main() {
 
 	var n int
 	if files[len(files)-1].Date.Sub(files[0].Date) > 7*24*time.Hour {
-		n = 3 //runtime.GOMAXPROCS(0) + 2
+		n = 1 //runtime.GOMAXPROCS(0) + 2
 	} else {
 		n = 1
 	}
@@ -71,9 +79,9 @@ func main() {
 		wg.Add(1)
 		go func() {
 			fmapLocal := make(map[string]int)
-			smap := make(map[string]*sessionInfo)
+			smap := make(map[string]*glblog.SessionInfo)
 			for i, lfi := range thisFiles {
-				doOneFile(lfi.Fpath, smap, fmapLocal, db, *assetOnly)
+				doOneFile(lfi.Fpath, smap, fmapLocal, db, sdb, *assetOnly)
 				log.Printf("done with %s, %d/%d\n", filepath.Base(lfi.Fpath), i+1, len(thisFiles))
 			}
 			mu.Lock()
@@ -93,29 +101,32 @@ func main() {
 	for k, v := range fmap {
 		fmt.Fprintf(fout, "%s, %d\n", k, v)
 	}
+
+	sout, _ := os.Create("sessions.csv")
+	defer sout.Close()
+	iter := db.NewIterator(nil, nil)
+	for iter.Next() {
+		reader := bytes.NewReader(iter.Value())
+		dec := gob.NewDecoder(reader)
+		var si glblog.SessionInfo
+		err := dec.Decode(&si)
+		if err != nil {
+			log.Fatal(err)
+		}
+		fmt.Fprintln(sout, si)
+	}
+
 	log.Println("bye")
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 
-type sessionInfo struct {
-	sid       string
-	started   time.Time
-	ended     time.Time
-	filename  string
-	bandwidth int
-}
-
 var layout = "2006-01-02 15:04:05.000"
 var dateLayout = "2006-01-02"
 
-func (s sessionInfo) String() string {
-	return fmt.Sprintf("%s, %s, %s, %s, %d", s.sid, s.started.Format(layout), s.ended.Format(layout), s.filename, s.bandwidth)
-}
-
 var mu sync.Mutex
 
-func doOneFile(fpath string, smap map[string]*sessionInfo, fmap map[string]int, db *leveldb.DB, assetOnly bool) {
+func doOneFile(fpath string, smap map[string]*glblog.SessionInfo, fmap map[string]int, db, sdb *leveldb.DB, assetOnly bool) {
 	f, err := os.Open(fpath)
 	if err != nil {
 		log.Println(err)
@@ -128,7 +139,7 @@ func doOneFile(fpath string, smap map[string]*sessionInfo, fmap map[string]int, 
 
 	s := bufio.NewScanner(f)
 	cnt := 0
-	totalCnt := 0
+	// totalCnt := 0
 	var lastEvent *glblog.Event
 	for s.Scan() {
 		line := s.Text()
@@ -138,9 +149,9 @@ func doOneFile(fpath string, smap map[string]*sessionInfo, fmap map[string]int, 
 
 		if strings.Contains(line, "Successfully New Setup Session") {
 			strs := strings.SplitN(line, ",", 8)
-			si := &sessionInfo{}
+			si := &glblog.SessionInfo{}
 			strStarted := strs[2] + " " + strs[3]
-			si.started, _ = time.ParseInLocation(layout, strStarted, loc)
+			si.Started, _ = time.ParseInLocation(layout, strStarted, loc)
 
 			logLine := strings.Trim(strs[7], `"`)
 
@@ -150,24 +161,24 @@ func doOneFile(fpath string, smap map[string]*sessionInfo, fmap map[string]int, 
 
 			idx := strings.Index(logLine, "SessionId")
 			strs2 := strings.FieldsFunc(logLine[idx:], sepFunc)
-			si.sid = strs2[1]
+			si.SID = strs2[1]
 
 			idx = strings.Index(logLine, "AssetID")
 			strs2 = strings.FieldsFunc(logLine[idx:], sepFunc)
-			si.filename = strs2[1]
+			si.Filename = strs2[1]
 
 			idx = strings.Index(logLine, "Bandwidth")
 			strs2 = strings.FieldsFunc(logLine[idx:], sepFunc)
-			si.bandwidth, err = strconv.Atoi(strs2[1])
+			si.Bandwidth, err = strconv.Atoi(strs2[1])
 			if err != nil {
 				fmt.Println(err, "invalid log line, ", logLine)
 				continue
 			}
 
 			if assetOnly == false {
-				smap[si.sid] = si
+				smap[si.SID] = si
 			}
-			fmap[si.filename] = si.bandwidth
+			fmap[si.Filename] = si.Bandwidth
 		} else if strings.Contains(line, "OnTeardownNotification") && assetOnly == false {
 			strs := strings.SplitN(line, ",", 8)
 			strEnded := strs[2] + " " + strs[3]
@@ -178,36 +189,76 @@ func doOneFile(fpath string, smap map[string]*sessionInfo, fmap map[string]int, 
 
 			if si, ok := smap[sid]; ok {
 				delete(smap, sid)
-				si.ended, _ = time.ParseInLocation(layout, strEnded, loc)
+				si.Ended, _ = time.ParseInLocation(layout, strEnded, loc)
+
 				{
-					lastEvent = writeEvent(batch, si.sid, si.started, glblog.SessionCreated, si.filename, 0)
-					cnt++
-					totalCnt++
-				}
-				{
-					lastEvent = writeEvent(batch, si.sid, si.ended, glblog.SessionClosed, si.filename, 0)
-					cnt++
-					totalCnt++
+					data, err := sdb.Get([]byte(sid), nil)
+					if err != nil && err != leveldb.ErrNotFound {
+						log.Fatal(err)
+					}
+					logs := []vodlog.EventLog{}
+					if data != nil {
+						reader := bytes.NewReader(data)
+						dec := gob.NewDecoder(reader)
+						err := dec.Decode(&logs)
+						if err != nil {
+							log.Fatal(err)
+						}
+					}
+					sort.Sort(vodlog.Sorter(logs))
+					if len(logs) == 1 {
+						si.Offset = logs[0].StartOffset
+					} else if len(logs) > 1 {
+						var minDiff float64
+						for _, l := range logs {
+							diff := math.Abs(float64(si.Ended.Sub(l.EventTime)))
+							if minDiff == 0 || diff < minDiff {
+								minDiff = diff
+								if l.StartOffset != -1 {
+									si.Offset = l.StartOffset
+								}
+							}
+						}
+					}
+
+					var buf bytes.Buffer
+					enc := gob.NewEncoder(&buf)
+					err = enc.Encode(si)
+					if err != nil {
+						log.Fatal(err)
+					}
+					batch.Put([]byte(si.Started.Format(layout)+si.SID), buf.Bytes())
 				}
 
-				chunkDur := time.Duration(chunkSize / (float64(si.bandwidth) / 8) * float64(time.Second.Nanoseconds()))
-				i := 0
-				for t := si.started; si.ended.Sub(t) > 0; t, i = t.Add(chunkDur), i+1 {
-					{
-						lastEvent = writeEvent(batch, si.sid, t, glblog.ChunkCreated, si.filename, i)
-						cnt++
-						totalCnt++
-					}
-					{
-						et := t.Add(chunkDur)
-						if si.ended.Sub(et) < 0 {
-							et = si.ended
-						}
-						lastEvent = writeEvent(batch, si.sid, et, glblog.ChunkClosed, si.filename, i)
-						cnt++
-						totalCnt++
-					}
-				}
+				// {
+				// 	lastEvent = writeEvent(batch, si.sid, si.started, glblog.SessionCreated, si.filename, 0)
+				// 	cnt++
+				// 	totalCnt++
+				// }
+				// {
+				// 	lastEvent = writeEvent(batch, si.sid, si.ended, glblog.SessionClosed, si.filename, 0)
+				// 	cnt++
+				// 	totalCnt++
+				// }
+
+				// chunkDur := time.Duration(chunkSize / (float64(si.bandwidth) / 8) * float64(time.Second.Nanoseconds()))
+				// i := 0
+				// for t := si.started; si.ended.Sub(t) > 0; t, i = t.Add(chunkDur), i+1 {
+				// 	{
+				// 		lastEvent = writeEvent(batch, si.sid, t, glblog.ChunkCreated, si.filename, i)
+				// 		cnt++
+				// 		totalCnt++
+				// 	}
+				// 	{
+				// 		et := t.Add(chunkDur)
+				// 		if si.ended.Sub(et) < 0 {
+				// 			et = si.ended
+				// 		}
+				// 		lastEvent = writeEvent(batch, si.sid, et, glblog.ChunkClosed, si.filename, i)
+				// 		cnt++
+				// 		totalCnt++
+				// 	}
+				// }
 			}
 		}
 
@@ -227,7 +278,9 @@ func doOneFile(fpath string, smap map[string]*sessionInfo, fmap map[string]int, 
 		if err != nil {
 			log.Fatal(err)
 		}
-		log.Printf("batched with %s, %s events, etime[%s]\n", filepath.Base(fpath), humanize.Comma(int64(cnt)), lastEvent.EventTime)
+		if lastEvent != nil {
+			log.Printf("batched with %s, %s events, etime[%s]\n", filepath.Base(fpath), humanize.Comma(int64(cnt)), lastEvent.EventTime)
+		}
 	}
 
 	if err := s.Err(); err != nil {

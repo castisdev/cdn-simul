@@ -4,8 +4,10 @@ glb-log-manip/glb-log-manip
 cdn-simul/cdn-simul
 cdn-simul/cdn-simul.local.json
 glb-log-manip/chunk.db/
+glb-log-manip/session.db/
 csv-exporter/csv-exporter
 glb-log-manip/files.csv
+glb-log-manip/sessions.csv
 csv-exporter/*.csv
 glb-log-filter/glb-log-filter
 vod-log-manip/elog.db/

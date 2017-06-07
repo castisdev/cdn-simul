@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/castisdev/cdn-simul/vodlog"
 	"github.com/syndtr/goleveldb/leveldb"
 )
 
@@ -46,7 +47,7 @@ func main() {
 		for iter.Next() {
 			reader := bytes.NewReader(iter.Value())
 			dec := gob.NewDecoder(reader)
-			var e eventLog
+			var e vodlog.EventLog
 			err := dec.Decode(&e)
 			if err != nil {
 				log.Fatal(err)
@@ -67,13 +68,13 @@ func main() {
 		for iter.Next() {
 			reader := bytes.NewReader(iter.Value())
 			dec := gob.NewDecoder(reader)
-			logs := []eventLog{}
+			logs := []vodlog.EventLog{}
 			err := dec.Decode(&logs)
 			if err != nil {
 				log.Fatal(err)
 			}
 			if len(logs) > 1 {
-				sort.Sort(sorter(logs))
+				sort.Sort(vodlog.Sorter(logs))
 				for _, l := range logs {
 					fmt.Fprintln(of, l)
 				}
@@ -104,36 +105,6 @@ func listFiles(sdir string, db, sdb *leveldb.DB) {
 		doOneFile(path.Join(sdir, f.Name()), db, sdb)
 	}
 }
-
-const (
-	majorMask = 0xffff0000
-	minorMask = 0x0000ffff
-)
-
-const (
-	sessionUsage   = 0x00010000
-	rtspListener   = 0x00020000
-	rtspStreamer   = 0x00040000
-	sessionManager = 0x00080000
-	fileManager    = 0x00100000
-	fsmp           = 0x00200000
-	global         = 0x00400000
-)
-
-const (
-	create   = 0x0001
-	close    = 0x0002
-	ff       = 0x0004
-	rw       = 0x0008
-	slow     = 0x0010
-	pause    = 0x0020
-	play     = 0x0040
-	teardown = 0x0080
-	seek     = 0x0100
-	usage    = 0x0200
-)
-
-var layout = "2006-01-02 15:04:05"
 
 func doOneFile(fpath string, db, sdb *leveldb.DB) {
 	batch := new(leveldb.Batch)
@@ -168,18 +139,18 @@ func doOneFile(fpath string, db, sdb *leveldb.DB) {
 		}
 
 		major := etype & 0xffff0000
-		if major != sessionUsage {
+		if major != vodlog.SessionUsage {
 			continue
 		}
 		minor := etype & 0xffff
-		if minor == teardown || minor == close {
+		if minor == vodlog.Teardown || minor == vodlog.Close {
 			continue
 		}
-		if minor != usage {
+		if minor != vodlog.Usage {
 			continue
 		}
 
-		var e eventLog
+		var e vodlog.EventLog
 
 		tm, err := strconv.Atoi(strs[2])
 		if err != nil {
@@ -191,7 +162,6 @@ func doOneFile(fpath string, db, sdb *leveldb.DB) {
 
 		e.ClientIP = strings.Trim(strs2[2], " ")
 
-		// resetup[0], vod_request_id[], vod_ip[125.147.128.34]
 		sepFunc := func(c rune) bool {
 			return c == '[' || c == ']' || c == ',' || c == ' '
 		}
@@ -244,14 +214,14 @@ func doOneFile(fpath string, db, sdb *leveldb.DB) {
 			if err != nil {
 				log.Fatal(err)
 			}
-			batch.Put([]byte(e.EventTime.Format(layout)+e.VodIP+e.SID+strconv.Itoa(int(e.StartOffset))), buf.Bytes())
+			batch.Put([]byte(e.EventTime.Format(vodlog.Layout)+e.VodIP+e.SID+strconv.Itoa(int(e.StartOffset))), buf.Bytes())
 		}
 
 		data, err := sdb.Get([]byte(e.SID), nil)
 		if err != nil && err != leveldb.ErrNotFound {
 			log.Fatal(err)
 		}
-		logs := []eventLog{}
+		logs := []vodlog.EventLog{}
 		if data != nil {
 			reader := bytes.NewReader(data)
 			dec := gob.NewDecoder(reader)
@@ -261,7 +231,7 @@ func doOneFile(fpath string, db, sdb *leveldb.DB) {
 			}
 		}
 		logs = append(logs, e)
-		sort.Sort(sorter(logs))
+		sort.Sort(vodlog.Sorter(logs))
 
 		{
 			var buf bytes.Buffer
@@ -287,80 +257,4 @@ func doOneFile(fpath string, db, sdb *leveldb.DB) {
 	}
 
 	log.Println("done with", fpath)
-}
-
-type eventLog struct {
-	EventTime   time.Time
-	SID         string
-	Filename    string
-	Bitrate     int
-	Filesize    int64
-	StartOffset int64
-	Resetup     bool
-	VodIP       string
-	ClientIP    string
-}
-
-func (e eventLog) String() string {
-	return fmt.Sprintf("%s, %s, %s, %38s, %11d, %11d, %8d, %t", e.EventTime.Format(layout), e.SID, e.VodIP, e.Filename, e.Filesize, e.StartOffset, e.Bitrate, e.Resetup)
-}
-
-type sorter []eventLog
-
-func (s sorter) Len() int {
-	return len(s)
-}
-func (s sorter) Swap(i, j int) {
-	s[i], s[j] = s[j], s[i]
-}
-func (s sorter) Less(i, j int) bool {
-	if s[i].EventTime.Equal(s[j].EventTime) == false {
-		return s[i].EventTime.Before(s[j].EventTime)
-	}
-	return s[i].StartOffset < s[j].StartOffset
-}
-
-func etypeString(etype int64) string {
-	major := etype & 0xffff0000
-	minor := etype & 0xffff
-	var str string
-	switch major {
-	case sessionUsage:
-		str = "SU/"
-		switch minor {
-		case create:
-			str += "create"
-		case close:
-			str += "close"
-		case ff:
-			str += "ff"
-		case rw:
-			str += "rw"
-		case slow:
-			str += "slow"
-		case pause:
-			str += "pause"
-		case play:
-			str += "play"
-		case teardown:
-			str += "teardown"
-		case seek:
-			str += "seek"
-		case usage:
-			str += "usage"
-		}
-	case rtspListener:
-		str = "RTSP-L"
-	case rtspStreamer:
-		str = "RTSP-S"
-	case sessionManager:
-		str = "SM"
-	case fileManager:
-		str = "FM"
-	case fsmp:
-		str = "FSMP"
-	case global:
-		str = "GLOBAL"
-	}
-	return str
 }
