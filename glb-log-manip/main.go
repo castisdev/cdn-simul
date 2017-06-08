@@ -23,6 +23,7 @@ import (
 )
 
 var chunkSize float64 = 2 * 1024 * 1024
+var avgBitrate int
 
 func main() {
 	sdir := flag.String("sdir", "", "source directory")
@@ -49,6 +50,21 @@ func main() {
 	sort.Sort(glblog.LogFileInfoSorter(files))
 
 	fmap := make(map[string]int)
+
+	var totalBitrate int64
+	fin, err := os.Open("files.csv")
+	if err == nil {
+		s := bufio.NewScanner(fin)
+		for s.Scan() {
+			line := s.Text()
+			strs := strings.Split(line, ",")
+			filename := strs[0]
+			bitrate, _ := strconv.Atoi(strings.TrimSpace(strs[1]))
+			fmap[filename] = bitrate
+			totalBitrate += int64(bitrate)
+		}
+	}
+	avgBitrate = int(totalBitrate / int64(len(fmap)))
 
 	var n int
 	if files[len(files)-1].Date.Sub(files[0].Date) > 7*24*time.Hour {
@@ -119,6 +135,14 @@ func main() {
 	log.Println("bye")
 }
 
+func calcAvgBitrate(fmap map[string]int) int {
+	var totalBitrate int64
+	for _, b := range fmap {
+		totalBitrate += int64(b)
+	}
+	return int(totalBitrate / int64(len(fmap)))
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 
 var layout = "2006-01-02 15:04:05.000"
@@ -147,7 +171,8 @@ func doOneFile(fpath string, smap map[string]*glblog.SessionInfo, fmap map[strin
 			continue
 		}
 
-		if strings.Contains(line, "Successfully New Setup Session") {
+		if strings.Contains(line, "Successfully New Setup Session") ||
+			strings.Contains(line, "Successfully New SemiSetup Session") {
 			strs := strings.SplitN(line, ",", 8)
 			si := &glblog.SessionInfo{}
 			strStarted := strs[2] + " " + strs[3]
@@ -168,17 +193,27 @@ func doOneFile(fpath string, smap map[string]*glblog.SessionInfo, fmap map[strin
 			si.Filename = strs2[1]
 
 			idx = strings.Index(logLine, "Bandwidth")
-			strs2 = strings.FieldsFunc(logLine[idx:], sepFunc)
-			si.Bandwidth, err = strconv.Atoi(strs2[1])
-			if err != nil {
-				fmt.Println(err, "invalid log line, ", logLine)
-				continue
+			if idx != -1 {
+				strs2 = strings.FieldsFunc(logLine[idx:], sepFunc)
+				si.Bandwidth, err = strconv.Atoi(strs2[1])
+				if err != nil {
+					log.Println(err, "invalid log line, ", logLine)
+					continue
+				}
+				if si.Bandwidth != 0 {
+					fmap[si.Filename] = si.Bandwidth
+				}
+			} else if bw, ok := fmap[si.Filename]; ok {
+				si.Bandwidth = bw
+			} else if avgBitrate != 0 {
+				si.Bandwidth = avgBitrate
+			} else {
+				si.Bandwidth = calcAvgBitrate(fmap)
 			}
 
 			if assetOnly == false {
 				smap[si.SID] = si
 			}
-			fmap[si.Filename] = si.Bandwidth
 		} else if strings.Contains(line, "OnTeardownNotification") && assetOnly == false {
 			strs := strings.SplitN(line, ",", 8)
 			strEnded := strs[2] + " " + strs[3]
