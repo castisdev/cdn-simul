@@ -26,7 +26,7 @@ import (
 	"github.com/syndtr/goleveldb/leveldb/iterator"
 )
 
-const chunkSize int64 = 2 * 1024 * 1024
+const chunkSize int64 = 2000000 //2 * 1024 * 1024
 
 var layout = "2006-01-02 15:04:05.000"
 
@@ -582,7 +582,7 @@ func main() {
 			duration:       du,
 			sessionEndTime: ev.Ended,
 		}
-		if ecEv.time.After(ev.Ended) {
+		if ecEv.time.Sub(ev.Ended) >= 0 {
 			ecEv.time = ev.Ended.Add(-time.Millisecond)
 		}
 		heap.Push(endEvents, ecEv)
