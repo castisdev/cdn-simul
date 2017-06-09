@@ -39,7 +39,7 @@ type SessionEvent struct {
 	Bps       int64
 }
 
-func (s *SessionEvent) String() string {
+func (s SessionEvent) String() string {
 	layout := "2006-01-02 15:04:05.000"
 	return fmt.Sprintf("Session %s %s %s size:%d bps:%d", s.Time.Format(layout), s.SessionID, s.FileName, s.FileSize, s.Bps)
 }
@@ -55,7 +55,7 @@ type ChunkEvent struct {
 	ChunkSize int64
 }
 
-func (s *ChunkEvent) String() string {
+func (s ChunkEvent) String() string {
 	layout := "2006-01-02 15:04:05.000"
 	return fmt.Sprintf("Chunk %s %s %s size:%d bps:%d idx:%d chunksize:%d",
 		s.Time.Format(layout), s.SessionID, s.FileName, s.FileSize, s.Bps, s.Index, s.ChunkSize)

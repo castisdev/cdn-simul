@@ -2,23 +2,21 @@ package main
 
 import (
 	"bytes"
-	"encoding/csv"
+	"container/heap"
 	"encoding/gob"
 	"encoding/json"
 	"flag"
 	"fmt"
-	"io"
 	"io/ioutil"
 	"log"
 	"net"
 	"net/http"
 	"os"
 	"runtime/pprof"
-	"strconv"
-	"strings"
 	"time"
 
 	"github.com/castisdev/cdn-simul/data"
+	"github.com/castisdev/cdn-simul/glblog"
 	"github.com/castisdev/cdn-simul/lb"
 	"github.com/castisdev/cdn-simul/lb/vod"
 	"github.com/castisdev/cdn-simul/status"
@@ -32,42 +30,6 @@ const chunkSize int64 = 2 * 1024 * 1024
 
 var layout = "2006-01-02 15:04:05.000"
 
-type eventType int
-
-func (et eventType) String() string {
-	switch et {
-	case sessionCreated:
-		return "s created"
-	case sessionClosed:
-		return "s closed"
-	case chunkCreated:
-		return "c created"
-	case chunkClosed:
-		return "c closed"
-	default:
-		return "unknown"
-	}
-}
-
-const (
-	chunkClosed   eventType = iota
-	sessionClosed eventType = iota
-	sessionCreated
-	chunkCreated
-)
-
-type event struct {
-	SID       string
-	EventTime time.Time
-	Filename  string
-	Index     int
-	EventType eventType
-}
-
-func (e event) String() string {
-	return fmt.Sprintf("%s, %s, %9v, %4d, %s", e.EventTime.Format(layout), e.SID, e.EventType, e.Index, e.Filename)
-}
-
 func strToTime(str string) time.Time {
 	loc, _ := time.LoadLocation("Local")
 	t, _ := time.ParseInLocation(layout, str, loc)
@@ -78,18 +40,114 @@ func timeToStr(t time.Time) string {
 	return t.Format(layout)
 }
 
-func readEvent(iter iterator.Iterator) *event {
+func readEvent(iter iterator.Iterator) *glblog.SessionInfo {
 	if !iter.Next() {
 		return nil
 	}
 	reader := bytes.NewReader(iter.Value())
 	dec := gob.NewDecoder(reader)
-	var e event
+	var e glblog.SessionInfo
 	err := dec.Decode(&e)
 	if err != nil {
 		log.Fatal(err)
 	}
 	return &e
+}
+
+var eventIdx int
+
+func readEventTest() *glblog.SessionInfo {
+	eventIdx++
+	evtList := []*glblog.SessionInfo{
+		&glblog.SessionInfo{
+			SID:       "54a9ced8-9ae6-4fb9-8dad-d8187af1db00",
+			Started:   strToTime("2017-04-29 08:16:30.108"),
+			Ended:     strToTime("2017-04-29 08:17:05.189"),
+			Filename:  "MXCF6UGASGL1000041_K20150604122403.mpg",
+			Bandwidth: 6443027,
+			Offset:    376,
+		},
+
+		&glblog.SessionInfo{
+			SID:       "89de68d5-e00f-4365-b57b-c318d2274b8c",
+			Started:   strToTime("2017-04-29 08:16:31.148"),
+			Ended:     strToTime("2017-04-29 08:19:40.516"),
+			Filename:  "MT6EBI1TSGL0800002_K20121009164502.mpg",
+			Bandwidth: 2881222,
+			Offset:    53768,
+		},
+		&glblog.SessionInfo{
+			SID:       "051bfc9e-b888-4625-9b6b-ef2505e48b51",
+			Started:   strToTime("2017-04-29 08:16:31.254"),
+			Ended:     strToTime("2017-04-29 08:18:13.469"),
+			Filename:  "MT6F700QSGL1000041_K20150714151153.mpg",
+			Bandwidth: 6443012,
+			Offset:    376,
+		},
+
+		&glblog.SessionInfo{
+			SID:       "c932bf70-0896-4e6a-b83e-9453bebc7087",
+			Started:   strToTime("2017-04-29 08:16:31.923"),
+			Ended:     strToTime("2017-04-29 08:25:11.670"),
+			Filename:  "MXQG40YVSGL1500001_K20160531224338.mpg",
+			Bandwidth: 6462167,
+			Offset:    376,
+		},
+		&glblog.SessionInfo{
+			SID:       "519ae106-83aa-41ee-8cdc-b92debf38446",
+			Started:   strToTime("2017-04-29 08:16:32.116"),
+			Ended:     strToTime("2017-04-29 08:20:11.905"),
+			Filename:  "MCLH302CSGL1500001_K20170313201227.mpg",
+			Bandwidth: 6459963,
+			Offset:    376,
+		},
+
+		&glblog.SessionInfo{
+			SID:       "73e9381e-3924-4d0e-9b54-e875c5fd049b",
+			Started:   strToTime("2017-04-29 08:16:33.768"),
+			Ended:     strToTime("2017-04-29 08:19:36.559"),
+			Filename:  "MT6EBI1DSGL0800001_K20121008212437.mpg",
+			Bandwidth: 2881119,
+			Offset:    53768,
+		},
+		&glblog.SessionInfo{
+			SID:       "0e192ee5-3870-4cf1-9247-a9563b5ac981",
+			Started:   strToTime("2017-04-29 08:16:35.786"),
+			Ended:     strToTime("2017-04-29 08:17:55.046"),
+			Filename:  "MIAG12OESGL1500001_K20160202192944.mpg",
+			Bandwidth: 6458352,
+			Offset:    376,
+		},
+
+		&glblog.SessionInfo{
+			SID:       "5bf9ace7-0e07-4da7-82da-d0dd877abbb1",
+			Started:   strToTime("2017-04-29 08:16:37.499"),
+			Ended:     strToTime("2017-04-29 08:16:39.015"),
+			Filename:  "MIAG12N5SGL1500001_K20160202192041.mpg",
+			Bandwidth: 10552998,
+			Offset:    0,
+		},
+		&glblog.SessionInfo{
+			SID:       "45cc15fc-bf17-4fe2-b37c-eeb0a5c73d44",
+			Started:   strToTime("2017-04-29 08:16:39.012"),
+			Ended:     strToTime("2017-04-29 08:18:02.096"),
+			Filename:  "MIAG12N5SGL1500001_K20160202192041.mpg",
+			Bandwidth: 6459282,
+			Offset:    376,
+		},
+		&glblog.SessionInfo{
+			SID:       "f7c167dc-2367-424d-99f4-966f43faa9d8",
+			Started:   strToTime("2017-04-29 08:16:39.885"),
+			Ended:     strToTime("2017-04-29 09:17:10.466"),
+			Filename:  "M02G8032SGL1500001_K20160816003015.mpg",
+			Bandwidth: 6600033,
+			Offset:    376,
+		},
+	}
+	if eventIdx > 10 {
+		return nil
+	}
+	return evtList[eventIdx-1]
 }
 
 type stat struct {
@@ -124,7 +182,7 @@ func findConfig(c *data.Config, k string) data.VODConfig {
 	return data.VODConfig{}
 }
 
-func updateStat(cfg *data.Config, evt *event, st *status.Status, gst *stat) {
+func updateStat(ti time.Time, cfg *data.Config, st *status.Status, gst *stat) {
 	if st.Origin.Bps > gst.maxOriginBps {
 		gst.maxOriginBps = st.Origin.Bps
 	}
@@ -133,7 +191,7 @@ func updateStat(cfg *data.Config, evt *event, st *status.Status, gst *stat) {
 		gst.nextHitResetIdx = 0
 	}
 	hitReset := false
-	if gst.nextHitResetIdx >= 0 && time.Time(cfg.HitResetTimes[gst.nextHitResetIdx]).Before(evt.EventTime) {
+	if gst.nextHitResetIdx >= 0 && time.Time(cfg.HitResetTimes[gst.nextHitResetIdx]).Before(ti) {
 		hitReset = true
 		log.Println("hit rate reset!!!")
 
@@ -176,9 +234,9 @@ func updateStat(cfg *data.Config, evt *event, st *status.Status, gst *stat) {
 	}
 }
 
-func writeToDB(cfg *data.Config, st *status.Status, gst *stat, ev *event) {
+func writeToDB(ti time.Time, cfg *data.Config, st *status.Status, gst *stat) {
 	str := ""
-	t := ev.EventTime.UnixNano()
+	t := ti.UnixNano()
 	for _, v := range st.Caches {
 		vcfg := findConfig(cfg, v.VODKey)
 		vod := st.Vods[vod.Key(v.VODKey)]
@@ -222,7 +280,7 @@ func writeToDB(cfg *data.Config, st *status.Status, gst *stat, ev *event) {
 	}
 }
 
-func logStatus(cfg *data.Config, st *status.Status, gst *stat, ev *event, writeDB bool) {
+func logStatus(ti time.Time, cfg *data.Config, st *status.Status, gst *stat, writeDB bool) {
 	str := ""
 	totalHit := int64(0)
 	totalMiss := int64(0)
@@ -259,20 +317,138 @@ func logStatus(cfg *data.Config, st *status.Status, gst *stat, ev *event, writeD
 	fmt.Println(str)
 
 	if dbAddr != "" {
-		writeToDB(cfg, st, gst, ev)
+		writeToDB(ti, cfg, st, gst)
+	}
+}
+
+type eventHeap []endEvent
+
+func (h eventHeap) Len() int           { return len(h) }
+func (h eventHeap) Less(i, j int) bool { return h[i].time.Before(h[j].time) }
+func (h eventHeap) Swap(i, j int)      { h[i], h[j] = h[j], h[i] }
+
+func (h *eventHeap) Push(x interface{}) {
+	*h = append(*h, x.(endEvent))
+}
+
+func (h *eventHeap) Pop() interface{} {
+	old := *h
+	n := len(old)
+	x := old[n-1]
+	*h = old[0 : n-1]
+	return x
+}
+
+type endEventType int
+
+const (
+	sessionEnd endEventType = iota
+	chunkEnd
+)
+
+type endEvent struct {
+	endType        endEventType
+	time           time.Time
+	sid            string
+	filename       string
+	bps            int
+	index          int
+	duration       time.Duration
+	sessionEndTime time.Time
+}
+
+func (e endEvent) String() string {
+	return fmt.Sprintf("%v %s %s %s %8d %4d %v %s",
+		e.endType, e.time.Format(layout), e.sid, e.filename, e.bps, e.index, e.duration, e.sessionEndTime.Format(layout))
+}
+
+func processEventsUntil(ti time.Time, events *eventHeap, lb *lb.LB, cfg *data.Config, gst *stat, logPeriod time.Duration, writeDB bool) {
+	for events.Len() > 0 {
+		e := heap.Pop(events)
+		endEv := e.(endEvent)
+
+		if logPeriod == 0 {
+			log.Printf("%s\n", endEv)
+		}
+
+		if endEv.time.After(ti) {
+			heap.Push(events, endEv)
+			return
+		}
+
+		var st *status.Status
+		var err error
+		diffLastChunkTandSessionEndT := time.Millisecond
+		if endEv.endType == chunkEnd {
+			evt := data.ChunkEvent{
+				Time:      endEv.time,
+				SessionID: endEv.sid,
+				FileName:  endEv.filename,
+				Bps:       int64(endEv.bps),
+				Index:     int64(endEv.index),
+				ChunkSize: chunkSize,
+			}
+			st, err = lb.EndChunk(evt)
+			if err != nil {
+				log.Fatalf("failed to process end-chunk-event, %v", err)
+			}
+			updateStat(evt.Time, cfg, st, gst)
+			if logPeriod == 0 {
+				log.Printf("chunk end: %s\n", evt)
+				logStatus(evt.Time, cfg, st, gst, writeDB)
+			}
+			if endEv.sessionEndTime.Sub(endEv.time) == diffLastChunkTandSessionEndT {
+				continue
+			}
+
+			evt.Index++
+			st, err = lb.StartChunk(evt)
+			if err != nil {
+				log.Fatalf("failed to process start-chunk-event, %v", err)
+			}
+			updateStat(evt.Time, cfg, st, gst)
+			if logPeriod == 0 {
+				log.Printf("chunk start: %s\n", evt)
+				logStatus(evt.Time, cfg, st, gst, writeDB)
+			}
+
+			nextEndT := endEv.time.Add(endEv.duration)
+			if nextEndT.Before(endEv.sessionEndTime) {
+				endEv.time = nextEndT
+			} else {
+				endEv.time = endEv.sessionEndTime.Add(-diffLastChunkTandSessionEndT)
+			}
+			endEv.index++
+			heap.Push(events, endEv)
+		} else {
+			evt := data.SessionEvent{
+				Time:      endEv.time,
+				SessionID: endEv.sid,
+				FileName:  endEv.filename,
+				Bps:       int64(endEv.bps),
+			}
+			st, err = lb.EndSession(evt)
+			if err != nil {
+				log.Fatalf("failed to process end-sesison-event, %v", err)
+			}
+			updateStat(evt.Time, cfg, st, gst)
+			if logPeriod == 0 {
+				log.Printf("session end: %s\n", evt)
+				logStatus(evt.Time, cfg, st, gst, writeDB)
+			}
+		}
 	}
 }
 
 var dbAddr, dbUser, dbPass, dbName string
 
 func main() {
-	var cfgFile, dbFile, fileCsvFile, cpuprofile, memprofile, lp string
+	var cfgFile, dbFile, cpuprofile, memprofile, lp string
 	var readEventCount int
 	var writeDB bool
 
 	flag.StringVar(&cfgFile, "cfg", "cdn-simul.json", "config file")
 	flag.StringVar(&dbFile, "db", "chunk.db", "event db")
-	flag.StringVar(&fileCsvFile, "file-csv", "files.csv", "event db")
 	flag.IntVar(&readEventCount, "event-count", 0, "event count to process. if 0, process all event")
 	flag.StringVar(&cpuprofile, "cpuprofile", "", "write cpu profile")
 	flag.StringVar(&memprofile, "memprofile", "", "write memory profile")
@@ -314,28 +490,8 @@ func main() {
 		log.Fatalf("failed to create lb instance, %v", err)
 	}
 
-	ffile, err := os.OpenFile(fileCsvFile, os.O_RDONLY, 0755)
-	if err != nil {
-		log.Fatalf("failed to open files csv, %v", err)
-	}
-	defer ffile.Close()
-
-	freader := csv.NewReader(ffile)
-	bpsMap := make(map[string]int)
-	for {
-		record, err := freader.Read()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			log.Fatalf("failed to read csv, %v", err)
-		}
-		bps, err := strconv.Atoi(strings.Trim(record[1], " "))
-		if err != nil {
-			log.Fatalf("failed to atoi, %v", err)
-		}
-		bpsMap[record[0]] = bps
-	}
+	endEvents := &eventHeap{}
+	heap.Init(endEvents)
 
 	db, err := leveldb.OpenFile(dbFile, nil)
 	if err != nil {
@@ -345,6 +501,7 @@ func main() {
 
 	now := time.Now()
 	var nextLogT time.Time
+	var procT time.Time
 	evtCount := int64(0)
 	gStat := &stat{vods: make(map[string]vodStat), nextHitResetIdx: -1}
 	for {
@@ -353,75 +510,94 @@ func main() {
 			break
 		}
 		ev := readEvent(iter)
+		//ev := readEventTest()
 		if ev == nil {
+			processEventsUntil(strToTime("9999-12-31 00:00:00.000"), endEvents, lb, &cfg, gStat, logPeriod, writeDB)
 			break
 		}
-		if logPeriod == 0 {
-			log.Printf("%s\n", ev)
-		}
 		if evtCount == 1 {
-			nextLogT = ev.EventTime
+			nextLogT = ev.Started
+		}
+		procT = ev.Started
+
+		processEventsUntil(procT, endEvents, lb, &cfg, gStat, logPeriod, writeDB)
+
+		if logPeriod == 0 {
+			log.Printf("session event: %s\n", ev)
 		}
 
 		var st *status.Status
 		var err error
-		switch ev.EventType {
-		case sessionCreated:
-			evt := data.SessionEvent{
-				Time:      ev.EventTime,
-				SessionID: ev.SID,
-				FileName:  ev.Filename,
-				Bps:       int64(bpsMap[ev.Filename]),
-			}
-			st, err = lb.StartSession(evt)
-		case sessionClosed:
-			evt := data.SessionEvent{
-				Time:      ev.EventTime,
-				SessionID: ev.SID,
-				FileName:  ev.Filename,
-				Bps:       int64(bpsMap[ev.Filename]),
-			}
-			st, err = lb.EndSession(evt)
-		case chunkCreated:
-			evt := data.ChunkEvent{
-				Time:      ev.EventTime.Add(time.Millisecond),
-				SessionID: ev.SID,
-				FileName:  ev.Filename,
-				Bps:       int64(bpsMap[ev.Filename]),
-				Index:     int64(ev.Index),
-				ChunkSize: chunkSize,
-			}
-			st, err = lb.StartChunk(evt)
-		case chunkClosed:
-			evt := data.ChunkEvent{
-				Time:      ev.EventTime.Add(-time.Millisecond),
-				SessionID: ev.SID,
-				FileName:  ev.Filename,
-				Bps:       int64(bpsMap[ev.Filename]),
-				Index:     int64(ev.Index),
-				ChunkSize: chunkSize,
-			}
-			st, err = lb.EndChunk(evt)
+		sEvt := data.SessionEvent{
+			Time:      ev.Started,
+			SessionID: ev.SID,
+			FileName:  ev.Filename,
+			Bps:       int64(ev.Bandwidth),
 		}
+		st, err = lb.StartSession(sEvt)
 		if err != nil {
-			log.Fatalf("failed to event %s, %v", ev, err)
+			log.Fatalf("failed to process start-session-event, %v", err)
 		}
-		updateStat(&cfg, ev, st, gStat)
-		if ev.EventType == sessionCreated {
-			if logPeriod == 0 || ev.EventTime.After(nextLogT) {
-				logStatus(&cfg, st, gStat, ev, writeDB)
-				for {
-					nextLogT = nextLogT.Add(logPeriod)
-					if nextLogT.After(ev.EventTime) {
-						break
-					}
+		updateStat(ev.Started, &cfg, st, gStat)
+		if logPeriod == 0 {
+			log.Printf("session start: %s\n", sEvt)
+			logStatus(ev.Started, &cfg, st, gStat, writeDB)
+		} else if ev.Started.After(nextLogT) {
+			logStatus(ev.Started, &cfg, st, gStat, writeDB)
+			for {
+				nextLogT = nextLogT.Add(logPeriod)
+				if nextLogT.After(ev.Started) {
+					break
 				}
 			}
-		} else {
-			if logPeriod == 0 {
-				logStatus(&cfg, st, gStat, ev, writeDB)
-			}
 		}
+
+		idx := int(ev.Offset / chunkSize)
+		du := time.Duration(float64(8*chunkSize)/float64(ev.Bandwidth)*1000) * time.Millisecond
+		cEvt := data.ChunkEvent{
+			Time:      ev.Started,
+			SessionID: ev.SID,
+			FileName:  ev.Filename,
+			Bps:       int64(ev.Bandwidth),
+			Index:     int64(idx),
+			ChunkSize: chunkSize,
+		}
+		st, err = lb.StartChunk(cEvt)
+		if err != nil {
+			log.Fatalf("failed to process start-chunk-event, %v", err)
+		}
+		updateStat(ev.Started, &cfg, st, gStat)
+		if logPeriod == 0 {
+			log.Printf("chunk start: %s\n", cEvt)
+			logStatus(ev.Started, &cfg, st, gStat, writeDB)
+		}
+
+		ecEv := endEvent{
+			time:           ev.Started.Add(du),
+			endType:        chunkEnd,
+			sid:            ev.SID,
+			filename:       ev.Filename,
+			bps:            ev.Bandwidth,
+			index:          idx,
+			duration:       du,
+			sessionEndTime: ev.Ended,
+		}
+		if ecEv.time.After(ev.Ended) {
+			ecEv.time = ev.Ended.Add(-time.Millisecond)
+		}
+		heap.Push(endEvents, ecEv)
+
+		esEv := endEvent{
+			time:           ev.Ended,
+			endType:        sessionEnd,
+			sid:            ev.SID,
+			filename:       ev.Filename,
+			bps:            ev.Bandwidth,
+			index:          idx,
+			duration:       du,
+			sessionEndTime: ev.Ended,
+		}
+		heap.Push(endEvents, esEv)
 	}
 
 	log.Printf("completed. elapsed:%v\n", time.Since(now))
