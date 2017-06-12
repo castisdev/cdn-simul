@@ -24,20 +24,6 @@ type Options struct {
 	SnapshotWritePeriod time.Duration
 }
 
-type stat struct {
-	nextHitResetIdx     int
-	maxOriginBps        int64
-	vods                map[string]vodStat
-	hitResetWhenAllFull bool
-}
-
-type vodStat struct {
-	maxSessionPercent  int
-	maxBpsPercent      int
-	missCountWhenReset int64
-	hitCountWhenReset  int64
-}
-
 var layout = "2006-01-02 15:04:05.000"
 
 // StrToTime :
@@ -148,7 +134,6 @@ func (s *Simulator) Run() {
 	var nextLogT time.Time
 	var procT time.Time
 	evtCount := int64(0)
-	gStat := &stat{vods: make(map[string]vodStat), nextHitResetIdx: -1}
 	for {
 		evtCount++
 		if s.opt.MaxReadEventCount != 0 && int(evtCount) > s.opt.MaxReadEventCount {
@@ -156,7 +141,7 @@ func (s *Simulator) Run() {
 		}
 		ev := s.reader.ReadEvent()
 		if ev == nil {
-			s.processEventsUntil(StrToTime("9999-12-31 00:00:00.000"), s.internalEvents, s.lb, gStat)
+			s.processEventsUntil(StrToTime("9999-12-31 00:00:00.000"), s.internalEvents, s.lb)
 			break
 		}
 		if evtCount == 1 {
@@ -164,7 +149,7 @@ func (s *Simulator) Run() {
 		}
 		procT = ev.Started
 
-		s.processEventsUntil(procT, s.internalEvents, s.lb, gStat)
+		s.processEventsUntil(procT, s.internalEvents, s.lb)
 
 		if s.opt.SnapshotWritePeriod == 0 {
 			log.Printf("session event: %s\n", ev)
@@ -182,12 +167,11 @@ func (s *Simulator) Run() {
 		if err != nil {
 			log.Fatalf("failed to process start-session-event, %v", err)
 		}
-		s.updateStat(ev.Started, st, gStat)
 		if s.opt.SnapshotWritePeriod == 0 {
 			log.Printf("session start: %s\n", sEvt)
-			s.writeStatus(ev.Started, *st, s.cfg, s.opt, gStat)
+			s.writeStatus(ev.Started, *st, s.cfg, s.opt)
 		} else if ev.Started.After(nextLogT) {
-			s.writeStatus(ev.Started, *st, s.cfg, s.opt, gStat)
+			s.writeStatus(ev.Started, *st, s.cfg, s.opt)
 			for {
 				nextLogT = nextLogT.Add(s.opt.SnapshotWritePeriod)
 				if nextLogT.After(ev.Started) {
@@ -210,10 +194,9 @@ func (s *Simulator) Run() {
 		if err != nil {
 			log.Fatalf("failed to process start-chunk-event, %v", err)
 		}
-		s.updateStat(ev.Started, st, gStat)
 		if s.opt.SnapshotWritePeriod == 0 {
 			log.Printf("chunk start: %s\n", cEvt)
-			s.writeStatus(ev.Started, *st, s.cfg, s.opt, gStat)
+			s.writeStatus(ev.Started, *st, s.cfg, s.opt)
 		}
 
 		ecEv := endEvent{
@@ -244,13 +227,13 @@ func (s *Simulator) Run() {
 		heap.Push(s.internalEvents, esEv)
 	}
 }
-func (s *Simulator) writeStatus(ti time.Time, st status.Status, cfg data.Config, opt Options, gst *stat) {
+func (s *Simulator) writeStatus(ti time.Time, st status.Status, cfg data.Config, opt Options) {
 	if s.writer != nil {
-		s.writer.WriteStatus(ti, st, cfg, opt, gst)
+		s.writer.WriteStatus(ti, st, cfg, opt)
 	}
 }
 
-func (s *Simulator) processEventsUntil(ti time.Time, events *eventHeap, lb *lb.LB, gst *stat) {
+func (s *Simulator) processEventsUntil(ti time.Time, events *eventHeap, lb *lb.LB) {
 	for events.Len() > 0 {
 		e := heap.Pop(events)
 		endEv := e.(endEvent)
@@ -280,10 +263,9 @@ func (s *Simulator) processEventsUntil(ti time.Time, events *eventHeap, lb *lb.L
 			if err != nil {
 				log.Fatalf("failed to process end-chunk-event, %v", err)
 			}
-			s.updateStat(evt.Time, st, gst)
 			if s.opt.SnapshotWritePeriod == 0 {
 				log.Printf("chunk end: %s\n", evt)
-				s.writeStatus(evt.Time, *st, s.cfg, s.opt, gst)
+				s.writeStatus(evt.Time, *st, s.cfg, s.opt)
 			}
 			if endEv.sessionEndTime.Sub(endEv.time) == diffLastChunkTandSessionEndT {
 				continue
@@ -294,10 +276,9 @@ func (s *Simulator) processEventsUntil(ti time.Time, events *eventHeap, lb *lb.L
 			if err != nil {
 				log.Fatalf("failed to process start-chunk-event, %v", err)
 			}
-			s.updateStat(evt.Time, st, gst)
 			if s.opt.SnapshotWritePeriod == 0 {
 				log.Printf("chunk start: %s\n", evt)
-				s.writeStatus(evt.Time, *st, s.cfg, s.opt, gst)
+				s.writeStatus(evt.Time, *st, s.cfg, s.opt)
 			}
 
 			nextEndT := endEv.time.Add(endEv.duration)
@@ -319,63 +300,10 @@ func (s *Simulator) processEventsUntil(ti time.Time, events *eventHeap, lb *lb.L
 			if err != nil {
 				log.Fatalf("failed to process end-sesison-event, %v", err)
 			}
-			s.updateStat(evt.Time, st, gst)
 			if s.opt.SnapshotWritePeriod == 0 {
 				log.Printf("session end: %s\n", evt)
-				s.writeStatus(evt.Time, *st, s.cfg, s.opt, gst)
+				s.writeStatus(evt.Time, *st, s.cfg, s.opt)
 			}
-		}
-	}
-}
-
-func (s *Simulator) updateStat(ti time.Time, st *status.Status, gst *stat) {
-	if st.Origin.Bps > gst.maxOriginBps {
-		gst.maxOriginBps = st.Origin.Bps
-	}
-
-	if gst.nextHitResetIdx == -1 && len(s.cfg.HitResetTimes) > 0 {
-		gst.nextHitResetIdx = 0
-	}
-	hitReset := false
-	if gst.nextHitResetIdx >= 0 && time.Time(s.cfg.HitResetTimes[gst.nextHitResetIdx]).Before(ti) {
-		hitReset = true
-		log.Println("hit rate reset!!!")
-
-		defer func() {
-			gst.nextHitResetIdx++
-			if gst.nextHitResetIdx == len(s.cfg.HitResetTimes) {
-				gst.nextHitResetIdx = -2
-			}
-		}()
-	}
-	if st.AllCacheFull && !gst.hitResetWhenAllFull {
-		hitReset = true
-		log.Println("all cache full, hit rate reset!!!")
-		gst.hitResetWhenAllFull = true
-	}
-
-	for _, v := range st.Vods {
-		vc := FindConfig(&s.cfg, v.VODKey)
-		cache := FindCacheStatus(st, v.VODKey)
-		maxBps := int(float64(v.CurBps) * 100 / float64(vc.LimitBps))
-		maxSession := int(float64(v.CurSessionCount) * 100 / float64(vc.LimitSession))
-		if _, ok := gst.vods[v.VODKey]; !ok {
-			gst.vods[v.VODKey] = vodStat{}
-		}
-		s := gst.vods[v.VODKey]
-		if s.maxBpsPercent < maxBps {
-			s.maxBpsPercent = maxBps
-			gst.vods[v.VODKey] = s
-		}
-		if s.maxSessionPercent < maxSession {
-			s.maxSessionPercent = maxSession
-			gst.vods[v.VODKey] = s
-		}
-
-		if hitReset {
-			s.hitCountWhenReset = cache.CacheHitCount
-			s.missCountWhenReset = cache.CacheMissCount
-			gst.vods[v.VODKey] = s
 		}
 	}
 }
