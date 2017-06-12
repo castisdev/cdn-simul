@@ -3,6 +3,7 @@ package lb
 import (
 	"fmt"
 	"log"
+	"math"
 	"time"
 
 	"github.com/castisdev/cdn-simul/data"
@@ -11,6 +12,31 @@ import (
 	"github.com/castisdev/cdn-simul/status"
 	"github.com/castisdev/cdn/consistenthash"
 )
+
+// NewLBWeight :
+func NewLBWeight(cfg data.Config) (*LB, error) {
+	l := &LB{
+		Caches:        make(map[vod.Key]*cache.Cache),
+		VODs:          make(map[vod.Key]*vod.VOD),
+		vodSessionMap: make(map[string]vod.Key),
+	}
+	l.hash = consistenthash.New(3000, nil)
+	keyMap := make(map[string]int)
+	for _, v := range cfg.VODs {
+		c, err := cache.NewCache(v.StorageSize)
+		if err != nil {
+			return nil, err
+		}
+		l.Caches[vod.Key(v.VodID)] = c
+		l.VODs[vod.Key(v.VodID)] = &vod.VOD{LimitSessionCount: v.LimitSession, LimitBps: v.LimitBps}
+		gb := int64(1024 * 1024 * 1024)
+		hashWeight := int(math.Sqrt(float64(v.LimitBps/100000000)/float64(v.StorageSize/gb))*float64(v.StorageSize/gb)) / 10
+		keyMap[v.VodID] = hashWeight
+		fmt.Printf("%s: hash-weight(%v)\n", v.VodID, hashWeight)
+	}
+	l.hash.Add(keyMap)
+	return l, nil
+}
 
 // LB :
 type LB struct {
