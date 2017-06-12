@@ -19,7 +19,6 @@ func main() {
 	var cfgFile, dbFile, cpuprofile, memprofile, lp string
 	var dbAddr, dbUser, dbPass, dbName string
 	var readEventCount int
-	var writeDB bool
 
 	flag.StringVar(&cfgFile, "cfg", "cdn-simul.json", "config file")
 	flag.StringVar(&dbFile, "db", "chunk.db", "event db")
@@ -41,7 +40,6 @@ func main() {
 
 	opt := simul.Options{
 		MaxReadEventCount:   readEventCount,
-		UseWriteInfluxDB:    writeDB,
 		InfluxDBAddr:        dbAddr,
 		InfluxDBName:        dbName,
 		InfluxDBUser:        dbUser,
@@ -70,7 +68,7 @@ func main() {
 	}
 
 	var writer simul.StatusWriter
-	if opt.UseWriteInfluxDB {
+	if opt.InfluxDBAddr != "" {
 		writer = simul.NewMultiStatusWriter([]simul.StatusWriter{&simul.DBStatusWriter{}, &simul.StdStatusWriter{}})
 	} else {
 		writer = &simul.StdStatusWriter{}

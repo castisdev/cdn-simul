@@ -16,7 +16,6 @@ const chunkSize int64 = 2000000 //2 * 1024 * 1024
 // Options :
 type Options struct {
 	MaxReadEventCount   int
-	UseWriteInfluxDB    bool
 	InfluxDBAddr        string
 	InfluxDBName        string
 	InfluxDBUser        string
