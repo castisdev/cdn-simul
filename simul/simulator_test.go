@@ -5,6 +5,7 @@ import (
 
 	"github.com/castisdev/cdn-simul/data"
 	"github.com/castisdev/cdn-simul/glblog"
+	"github.com/castisdev/cdn-simul/lb"
 )
 
 func TestSimulator_Run(t *testing.T) {
@@ -29,7 +30,7 @@ func TestSimulator_Run(t *testing.T) {
 			Offset:    376,
 		},
 	}
-	si := NewSimulator(cfg, Options{}, NewTestEventReader(ss), nil)
+	si := NewSimulator(cfg, Options{}, &lb.SameHashingWeight{}, NewTestEventReader(ss), nil)
 	if si == nil {
 		t.Errorf("failed to create simulator instance")
 		return
@@ -38,7 +39,7 @@ func TestSimulator_Run(t *testing.T) {
 	si.Run()
 }
 
-func TestSimulator_Run_Dup2(t *testing.T) {
+func TestSimulator_Run_SameWeightDup2(t *testing.T) {
 	limitBps := int64(1000 * 1000 * 100)
 	cfg := data.Config{
 		VODs: []data.VODConfig{
@@ -64,7 +65,7 @@ func TestSimulator_Run_Dup2(t *testing.T) {
 			Offset:    0,
 		},
 	}
-	si := NewSimulator(cfg, Options{}, NewTestEventReader(ss), nil)
+	si := NewSimulator(cfg, Options{}, &lb.SameWeightDup2{}, NewTestEventReader(ss), nil)
 	if si == nil {
 		t.Errorf("failed to create simulator instance")
 		return

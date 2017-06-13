@@ -25,7 +25,7 @@ func TestLB_OneVOD(t *testing.T) {
 	assert := assert.New(t)
 
 	v1 := data.VODConfig{VodID: "v1", StorageSize: 100, LimitSession: 2, LimitBps: 100}
-	lb, err := New(data.Config{VODs: []data.VODConfig{v1}})
+	lb, err := New(data.Config{VODs: []data.VODConfig{v1}}, &SameHashingWeight{})
 	assert.Nil(err)
 
 	stat := &status.Status{

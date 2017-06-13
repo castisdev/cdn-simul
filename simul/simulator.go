@@ -109,8 +109,8 @@ type Simulator struct {
 }
 
 // NewSimulator :
-func NewSimulator(cfg data.Config, opt Options, r EventReader, w StatusWriter) *Simulator {
-	lb, err := lb.New(cfg)
+func NewSimulator(cfg data.Config, opt Options, s lb.VODSelector, r EventReader, w StatusWriter) *Simulator {
+	lb, err := lb.New(cfg, s)
 	if err != nil {
 		log.Fatalf("failed to create lb instance, %v", err)
 	}

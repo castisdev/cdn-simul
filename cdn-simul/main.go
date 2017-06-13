@@ -10,13 +10,25 @@ import (
 	"time"
 
 	"github.com/castisdev/cdn-simul/data"
+	"github.com/castisdev/cdn-simul/lb"
 	"github.com/castisdev/cdn-simul/simul"
 	"github.com/castisdev/cdn/profile"
 	"github.com/syndtr/goleveldb/leveldb"
 )
 
+// NewVODSelector :
+func NewVODSelector(t string) lb.VODSelector {
+	switch t {
+	case "diff-hash":
+		return &lb.DiffHashingWeight{}
+	case "dup2":
+		return &lb.SameWeightDup2{}
+	}
+	return &lb.SameHashingWeight{}
+}
+
 func main() {
-	var cfgFile, dbFile, cpuprofile, memprofile, lp string
+	var cfgFile, dbFile, cpuprofile, memprofile, lp, lb string
 	var dbAddr, dbUser, dbPass, dbName string
 	var readEventCount int
 
@@ -30,6 +42,7 @@ func main() {
 	flag.StringVar(&dbUser, "db-user", "", "DB username")
 	flag.StringVar(&dbPass, "db-pass", "", "DB password")
 	flag.StringVar(&dbName, "db-name", "mydb", "database name")
+	flag.StringVar(&lb, "lb", "hash", "hash | diff-hash | dup2")
 
 	flag.Parse()
 
@@ -79,7 +92,7 @@ func main() {
 		log.Fatalf("failed to open db, %v", err)
 	}
 	defer db.Close()
-	si := simul.NewSimulator(cfg, opt, simul.NewDBEventReader(db), writer)
+	si := simul.NewSimulator(cfg, opt, NewVODSelector(lb), simul.NewDBEventReader(db), writer)
 
 	now := time.Now()
 	si.Run()

@@ -2,8 +2,6 @@ package lb
 
 import (
 	"fmt"
-	"log"
-	"math"
 	"time"
 
 	"github.com/castisdev/cdn-simul/data"
@@ -13,49 +11,24 @@ import (
 	"github.com/castisdev/cdn/consistenthash"
 )
 
-// NewLBWeight :
-func NewLBWeight(cfg data.Config) (*LB, error) {
-	l := &LB{
-		Caches:        make(map[vod.Key]*cache.Cache),
-		VODs:          make(map[vod.Key]*vod.VOD),
-		vodSessionMap: make(map[string]vod.Key),
-	}
-	l.hash = consistenthash.New(3000, nil)
-	keyMap := make(map[string]int)
-	for _, v := range cfg.VODs {
-		c, err := cache.NewCache(v.StorageSize)
-		if err != nil {
-			return nil, err
-		}
-		l.Caches[vod.Key(v.VodID)] = c
-		l.VODs[vod.Key(v.VodID)] = &vod.VOD{LimitSessionCount: v.LimitSession, LimitBps: v.LimitBps}
-		gb := int64(1024 * 1024 * 1024)
-		hashWeight := int(math.Sqrt(float64(v.LimitBps/100000000)/float64(v.StorageSize/gb))*float64(v.StorageSize/gb)) / 10
-		keyMap[v.VodID] = hashWeight
-		fmt.Printf("%s: hash-weight(%v)\n", v.VodID, hashWeight)
-	}
-	l.hash.Add(keyMap)
-	return l, nil
-}
-
 // LB :
 type LB struct {
 	Caches        map[vod.Key]*cache.Cache
 	VODs          map[vod.Key]*vod.VOD
 	vodSessionMap map[string]vod.Key
+	Selector      VODSelector
 
 	hash *consistenthash.Map
 }
 
 // New :
-func New(cfg data.Config) (*LB, error) {
+func New(cfg data.Config, selector VODSelector) (*LB, error) {
 	l := &LB{
 		Caches:        make(map[vod.Key]*cache.Cache),
 		VODs:          make(map[vod.Key]*vod.VOD),
 		vodSessionMap: make(map[string]vod.Key),
+		Selector:      selector,
 	}
-	l.hash = consistenthash.New(3000, nil)
-	keyMap := make(map[string]int)
 	for _, v := range cfg.VODs {
 		c, err := cache.NewCache(v.StorageSize)
 		if err != nil {
@@ -63,11 +36,9 @@ func New(cfg data.Config) (*LB, error) {
 		}
 		l.Caches[vod.Key(v.VodID)] = c
 		l.VODs[vod.Key(v.VodID)] = &vod.VOD{LimitSessionCount: v.LimitSession, LimitBps: v.LimitBps}
-		hashWeight := 1
-		keyMap[v.VodID] = hashWeight
 	}
-	l.hash.Add(keyMap)
 
+	l.hash = l.Selector.InitHash(cfg)
 	return l, nil
 }
 
@@ -76,44 +47,12 @@ func (lb *LB) SelectVOD(evt data.SessionEvent) (vod.Key, error) {
 	if len(lb.VODs) != len(lb.Caches) || len(lb.VODs) == 0 || len(lb.Caches) == 0 {
 		return "", fmt.Errorf("invalid cache/vod info")
 	}
-	vodKeys := lb.hash.GetItems(evt.FileName)
-	return lb.SelectVODByHash(evt, vodKeys)
-}
-
-// SelectVODByDup2 :
-func (lb *LB) SelectVODByDup2(evt data.SessionEvent) (vod.Key, error) {
-	if len(lb.VODs) != len(lb.Caches) || len(lb.VODs) == 0 || len(lb.Caches) == 0 {
-		return "", fmt.Errorf("invalid cache/vod info")
-	}
-	vodKeys := lb.hash.GetItems(evt.FileName)
-	if len(vodKeys) >= 2 {
-		vod0Avail := lb.VODs[vod.Key(vodKeys[0])].LimitBps - lb.VODs[vod.Key(vodKeys[0])].CurBps
-		vod1Avail := lb.VODs[vod.Key(vodKeys[1])].LimitBps - lb.VODs[vod.Key(vodKeys[1])].CurBps
-		if vod0Avail < vod1Avail {
-			vodKeys[0], vodKeys[1] = vodKeys[1], vodKeys[0]
-		}
-	}
-	return lb.SelectVODByHash(evt, vodKeys)
-}
-
-// SelectVODByHash :
-func (lb *LB) SelectVODByHash(evt data.SessionEvent, vodKeys []string) (vod.Key, error) {
-	for _, v := range vodKeys {
-		k := vod.Key(v)
-		if lb.VODs[k].LimitSessionCount < lb.VODs[k].CurSessionCount+1 || lb.VODs[k].LimitBps < lb.VODs[k].CurBps+evt.Bps {
-			log.Printf("not available vod[%v], session(%v/%v) bps(%v/%v)",
-				k, lb.VODs[k].CurSessionCount, lb.VODs[k].LimitSessionCount, lb.VODs[k].CurBps, lb.VODs[k].LimitBps)
-			continue
-		}
-		return k, nil
-	}
-	return "", fmt.Errorf("failed to select vod")
+	return lb.Selector.VODSelect(evt, lb)
 }
 
 // StartSession :
 func (lb *LB) StartSession(evt data.SessionEvent) (*status.Status, error) {
-	//key, err := lb.SelectVOD(evt)
-	key, err := lb.SelectVODByDup2(evt)
+	key, err := lb.SelectVOD(evt)
 	if err != nil {
 		return nil, fmt.Errorf("failed to select VOD, %v", err)
 	}
