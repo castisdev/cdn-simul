@@ -78,6 +78,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("failed to open db, %v", err)
 	}
+	defer db.Close()
 	si := simul.NewSimulator(cfg, opt, simul.NewDBEventReader(db), writer)
 
 	now := time.Now()

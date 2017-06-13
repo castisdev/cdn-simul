@@ -37,3 +37,38 @@ func TestSimulator_Run(t *testing.T) {
 
 	si.Run()
 }
+
+func TestSimulator_Run_Dup2(t *testing.T) {
+	limitBps := int64(1000 * 1000 * 100)
+	cfg := data.Config{
+		VODs: []data.VODConfig{
+			data.VODConfig{VodID: "vod1", StorageSize: 1000000000, LimitSession: 10, LimitBps: limitBps},
+			data.VODConfig{VodID: "vod2", StorageSize: 1000000000, LimitSession: 10000, LimitBps: limitBps * 10},
+		},
+	}
+	ss := []*glblog.SessionInfo{
+		&glblog.SessionInfo{
+			SID:       "sess-A",
+			Started:   StrToTime("2017-04-29 08:16:37.499"),
+			Ended:     StrToTime("2017-04-29 08:16:39.015"),
+			Filename:  "a.mpg",
+			Bandwidth: 10000000,
+			Offset:    0,
+		},
+		&glblog.SessionInfo{
+			SID:       "sess-B",
+			Started:   StrToTime("2017-04-29 08:16:39.012"),
+			Ended:     StrToTime("2017-04-29 08:16:42.096"),
+			Filename:  "B.mpg",
+			Bandwidth: 1000000,
+			Offset:    0,
+		},
+	}
+	si := NewSimulator(cfg, Options{}, NewTestEventReader(ss), nil)
+	if si == nil {
+		t.Errorf("failed to create simulator instance")
+		return
+	}
+
+	si.Run()
+}

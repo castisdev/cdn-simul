@@ -76,12 +76,28 @@ func (lb *LB) SelectVOD(evt data.SessionEvent) (vod.Key, error) {
 	if len(lb.VODs) != len(lb.Caches) || len(lb.VODs) == 0 || len(lb.Caches) == 0 {
 		return "", fmt.Errorf("invalid cache/vod info")
 	}
-	return lb.SelectVODByHash(evt)
+	vodKeys := lb.hash.GetItems(evt.FileName)
+	return lb.SelectVODByHash(evt, vodKeys)
+}
+
+// SelectVODByDup2 :
+func (lb *LB) SelectVODByDup2(evt data.SessionEvent) (vod.Key, error) {
+	if len(lb.VODs) != len(lb.Caches) || len(lb.VODs) == 0 || len(lb.Caches) == 0 {
+		return "", fmt.Errorf("invalid cache/vod info")
+	}
+	vodKeys := lb.hash.GetItems(evt.FileName)
+	if len(vodKeys) >= 2 {
+		vod0Avail := lb.VODs[vod.Key(vodKeys[0])].LimitBps - lb.VODs[vod.Key(vodKeys[0])].CurBps
+		vod1Avail := lb.VODs[vod.Key(vodKeys[1])].LimitBps - lb.VODs[vod.Key(vodKeys[1])].CurBps
+		if vod0Avail < vod1Avail {
+			vodKeys[0], vodKeys[1] = vodKeys[1], vodKeys[0]
+		}
+	}
+	return lb.SelectVODByHash(evt, vodKeys)
 }
 
 // SelectVODByHash :
-func (lb *LB) SelectVODByHash(evt data.SessionEvent) (vod.Key, error) {
-	vodKeys := lb.hash.GetItems(evt.FileName)
+func (lb *LB) SelectVODByHash(evt data.SessionEvent, vodKeys []string) (vod.Key, error) {
 	for _, v := range vodKeys {
 		k := vod.Key(v)
 		if lb.VODs[k].LimitSessionCount < lb.VODs[k].CurSessionCount+1 || lb.VODs[k].LimitBps < lb.VODs[k].CurBps+evt.Bps {
@@ -96,7 +112,8 @@ func (lb *LB) SelectVODByHash(evt data.SessionEvent) (vod.Key, error) {
 
 // StartSession :
 func (lb *LB) StartSession(evt data.SessionEvent) (*status.Status, error) {
-	key, err := lb.SelectVOD(evt)
+	//key, err := lb.SelectVOD(evt)
+	key, err := lb.SelectVODByDup2(evt)
 	if err != nil {
 		return nil, fmt.Errorf("failed to select VOD, %v", err)
 	}
