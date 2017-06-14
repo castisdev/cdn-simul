@@ -15,14 +15,15 @@ type Cache struct {
 	HitCount    int64
 	MissCount   int64
 	OriginBps   int64
-	MissChunks  []string
+	MissChunks  map[string]interface{}
 	IsCacheFull bool
 }
 
 // NewCache :
 func NewCache(limitSize int64) (*Cache, error) {
 	m := &Cache{
-		LimitSize: limitSize,
+		LimitSize:  limitSize,
+		MissChunks: make(map[string]interface{}),
 	}
 
 	if err := m.init(); err != nil {
@@ -54,22 +55,17 @@ func (c *Cache) StartChunk(evt data.ChunkEvent) error {
 		}
 		c.MissCount++
 		c.OriginBps += evt.Bps
-		c.MissChunks = append(c.MissChunks, chunkSession(evt))
+		c.MissChunks[chunkSession(evt)] = nil
 	}
 	return nil
 }
 
 // EndChunk :
 func (c *Cache) EndChunk(evt data.ChunkEvent) error {
-	// cache miss된 chunk에 한해 origin bps 감소 처리
 	k := chunkSession(evt)
-	for i, v := range c.MissChunks {
-		if v == k {
-			c.OriginBps -= evt.Bps
-			c.MissChunks = append(c.MissChunks[:i], c.MissChunks[i+1:]...)
-			return nil
-		}
-
+	if _, ok := c.MissChunks[k]; ok {
+		c.OriginBps -= evt.Bps
+		delete(c.MissChunks, k)
 	}
 	return nil
 }
