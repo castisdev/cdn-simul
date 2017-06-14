@@ -19,10 +19,12 @@ import (
 // NewVODSelector :
 func NewVODSelector(t string) lb.VODSelector {
 	switch t {
-	case "diff-hash":
-		return &lb.DiffHashingWeight{}
+	case "weight-storage-bps":
+		return &lb.WeightStorageBps{}
 	case "dup2":
 		return &lb.SameWeightDup2{}
+	case "weight-storage":
+		return &lb.WeightStorage{}
 	}
 	return &lb.SameHashingWeight{}
 }
@@ -42,7 +44,7 @@ func main() {
 	flag.StringVar(&dbUser, "db-user", "", "DB username")
 	flag.StringVar(&dbPass, "db-pass", "", "DB password")
 	flag.StringVar(&dbName, "db-name", "mydb", "database name")
-	flag.StringVar(&lb, "lb", "hash", "hash | diff-hash | dup2")
+	flag.StringVar(&lb, "lb", "hash", "hash | weight-storage-bps | dup2 | weight-storage")
 
 	flag.Parse()
 

@@ -55,18 +55,37 @@ func SelectAvailableFirst(evt data.SessionEvent, lb *LB, vodKeys []string) (vod.
 	return "", fmt.Errorf("failed to select vod")
 }
 
-// DiffHashingWeight :
-type DiffHashingWeight struct {
+// WeightStorageBps :
+type WeightStorageBps struct {
 	SameHashingWeight
 }
 
 // InitHash :
-func (s *DiffHashingWeight) InitHash(cfg data.Config) *consistenthash.Map {
+func (s *WeightStorageBps) InitHash(cfg data.Config) *consistenthash.Map {
 	hash := consistenthash.New(3000, nil)
 	keyMap := make(map[string]int)
 	for _, v := range cfg.VODs {
 		gb := int64(1024 * 1024 * 1024)
 		hashWeight := int(math.Sqrt(float64(v.LimitBps/100000000)/float64(v.StorageSize/gb))*float64(v.StorageSize/gb)) / 10
+		keyMap[v.VodID] = hashWeight
+		fmt.Printf("%s: hash-weight(%v)\n", v.VodID, hashWeight)
+	}
+	hash.Add(keyMap)
+	return hash
+}
+
+// WeightStorage :
+type WeightStorage struct {
+	SameHashingWeight
+}
+
+// InitHash :
+func (s *WeightStorage) InitHash(cfg data.Config) *consistenthash.Map {
+	hash := consistenthash.New(100, nil)
+	keyMap := make(map[string]int)
+	for _, v := range cfg.VODs {
+		gb := int64(1024 * 1024 * 1024)
+		hashWeight := int(v.StorageSize / (100 * gb))
 		keyMap[v.VodID] = hashWeight
 		fmt.Printf("%s: hash-weight(%v)\n", v.VodID, hashWeight)
 	}
