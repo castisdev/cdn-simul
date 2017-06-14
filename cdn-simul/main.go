@@ -44,7 +44,7 @@ func main() {
 	flag.StringVar(&dbUser, "db-user", "", "DB username")
 	flag.StringVar(&dbPass, "db-pass", "", "DB password")
 	flag.StringVar(&dbName, "db-name", "mydb", "database name")
-	flag.StringVar(&lb, "lb", "hash", "hash | weight-storage-bps | dup2 | weight-storage")
+	flag.StringVar(&lb, "lb", "hash", "hash | weight-storage | weight-storage-bps | dup2")
 
 	flag.Parse()
 

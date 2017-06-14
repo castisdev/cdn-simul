@@ -8,7 +8,6 @@ import (
 	"github.com/castisdev/cdn-simul/lb/cache"
 	"github.com/castisdev/cdn-simul/lb/vod"
 	"github.com/castisdev/cdn-simul/status"
-	"github.com/castisdev/cdn/consistenthash"
 )
 
 // LB :
@@ -17,8 +16,6 @@ type LB struct {
 	VODs          map[vod.Key]*vod.VOD
 	vodSessionMap map[string]vod.Key
 	Selector      VODSelector
-
-	hash *consistenthash.Map
 }
 
 // New :
@@ -38,7 +35,7 @@ func New(cfg data.Config, selector VODSelector) (*LB, error) {
 		l.VODs[vod.Key(v.VodID)] = &vod.VOD{LimitSessionCount: v.LimitSession, LimitBps: v.LimitBps}
 	}
 
-	l.hash = l.Selector.InitHash(cfg)
+	l.Selector.Init(cfg)
 	return l, nil
 }
 
