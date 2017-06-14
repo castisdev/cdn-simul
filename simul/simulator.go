@@ -154,7 +154,6 @@ func (s *Simulator) Run() {
 			log.Printf("session event: %s\n", ev)
 		}
 
-		var st *status.Status
 		var err error
 		sEvt := data.SessionEvent{
 			Time:      ev.Started,
@@ -162,14 +161,16 @@ func (s *Simulator) Run() {
 			FileName:  ev.Filename,
 			Bps:       int64(ev.Bandwidth),
 		}
-		st, err = s.lb.StartSession(sEvt)
+		err = s.lb.StartSession(sEvt)
 		if err != nil {
 			log.Fatalf("failed to process start-session-event, %v", err)
 		}
 		if s.opt.SnapshotWritePeriod == 0 {
 			log.Printf("session start: %s\n", sEvt)
+			st := s.lb.Status(sEvt.Time)
 			s.writeStatus(ev.Started, *st, s.cfg, s.opt)
 		} else if ev.Started.After(nextLogT) {
+			st := s.lb.Status(sEvt.Time)
 			s.writeStatus(ev.Started, *st, s.cfg, s.opt)
 			for {
 				nextLogT = nextLogT.Add(s.opt.SnapshotWritePeriod)
@@ -189,12 +190,13 @@ func (s *Simulator) Run() {
 			Index:     int64(idx),
 			ChunkSize: chunkSize,
 		}
-		st, err = s.lb.StartChunk(cEvt)
+		err = s.lb.StartChunk(cEvt)
 		if err != nil {
 			log.Fatalf("failed to process start-chunk-event, %v", err)
 		}
 		if s.opt.SnapshotWritePeriod == 0 {
 			log.Printf("chunk start: %s\n", cEvt)
+			st := s.lb.Status(cEvt.Time)
 			s.writeStatus(ev.Started, *st, s.cfg, s.opt)
 		}
 
@@ -246,7 +248,6 @@ func (s *Simulator) processEventsUntil(ti time.Time, events *eventHeap, lb *lb.L
 			return
 		}
 
-		var st *status.Status
 		var err error
 		diffLastChunkTandSessionEndT := time.Millisecond
 		if endEv.endType == chunkEnd {
@@ -258,12 +259,13 @@ func (s *Simulator) processEventsUntil(ti time.Time, events *eventHeap, lb *lb.L
 				Index:     int64(endEv.index),
 				ChunkSize: chunkSize,
 			}
-			st, err = lb.EndChunk(evt)
+			err = lb.EndChunk(evt)
 			if err != nil {
 				log.Fatalf("failed to process end-chunk-event, %v", err)
 			}
 			if s.opt.SnapshotWritePeriod == 0 {
 				log.Printf("chunk end: %s\n", evt)
+				st := s.lb.Status(evt.Time)
 				s.writeStatus(evt.Time, *st, s.cfg, s.opt)
 			}
 			if endEv.sessionEndTime.Sub(endEv.time) == diffLastChunkTandSessionEndT {
@@ -271,12 +273,13 @@ func (s *Simulator) processEventsUntil(ti time.Time, events *eventHeap, lb *lb.L
 			}
 
 			evt.Index++
-			st, err = lb.StartChunk(evt)
+			err = lb.StartChunk(evt)
 			if err != nil {
 				log.Fatalf("failed to process start-chunk-event, %v", err)
 			}
 			if s.opt.SnapshotWritePeriod == 0 {
 				log.Printf("chunk start: %s\n", evt)
+				st := s.lb.Status(evt.Time)
 				s.writeStatus(evt.Time, *st, s.cfg, s.opt)
 			}
 
@@ -295,12 +298,13 @@ func (s *Simulator) processEventsUntil(ti time.Time, events *eventHeap, lb *lb.L
 				FileName:  endEv.filename,
 				Bps:       int64(endEv.bps),
 			}
-			st, err = lb.EndSession(evt)
+			err = lb.EndSession(evt)
 			if err != nil {
 				log.Fatalf("failed to process end-sesison-event, %v", err)
 			}
 			if s.opt.SnapshotWritePeriod == 0 {
 				log.Printf("session end: %s\n", evt)
+				st := s.lb.Status(evt.Time)
 				s.writeStatus(evt.Time, *st, s.cfg, s.opt)
 			}
 		}

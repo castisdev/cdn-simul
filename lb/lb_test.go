@@ -316,19 +316,23 @@ func TestLB_OneVOD(t *testing.T) {
 		var err error
 		switch tt.eventType {
 		case StartSessionType:
-			st, err = lb.StartSession(tt.event.(data.SessionEvent))
+			err = lb.StartSession(tt.event.(data.SessionEvent))
+			st = lb.Status(tt.event.(data.SessionEvent).Time)
 		case EndSessionType:
-			st, err = lb.EndSession(tt.event.(data.SessionEvent))
+			err = lb.EndSession(tt.event.(data.SessionEvent))
+			st = lb.Status(tt.event.(data.SessionEvent).Time)
 		case StartChunkType:
-			st, err = lb.StartChunk(tt.event.(data.ChunkEvent))
+			err = lb.StartChunk(tt.event.(data.ChunkEvent))
+			st = lb.Status(tt.event.(data.ChunkEvent).Time)
 		case EndChunkType:
-			st, err = lb.EndChunk(tt.event.(data.ChunkEvent))
+			err = lb.EndChunk(tt.event.(data.ChunkEvent))
+			st = lb.Status(tt.event.(data.ChunkEvent).Time)
 		}
 		if tt.expectError {
 			assert.NotNil(err, tt.name)
 		} else {
 			assert.Nil(err, tt.name)
+			assert.Equal(tt.expectStatus, st, tt.name)
 		}
-		assert.Equal(tt.expectStatus, st, tt.name)
 	}
 }

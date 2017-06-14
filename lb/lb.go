@@ -47,58 +47,63 @@ func (lb *LB) SelectVOD(evt data.SessionEvent) (vod.Key, error) {
 	return lb.Selector.VODSelect(evt, lb)
 }
 
+// Status :
+func (lb *LB) Status(t time.Time) *status.Status {
+	return lb.MakeStatus(t)
+}
+
 // StartSession :
-func (lb *LB) StartSession(evt data.SessionEvent) (*status.Status, error) {
+func (lb *LB) StartSession(evt data.SessionEvent) error {
 	key, err := lb.SelectVOD(evt)
 	if err != nil {
-		return nil, fmt.Errorf("failed to select VOD, %v", err)
+		return fmt.Errorf("failed to select VOD, %v", err)
 	}
 	err = lb.VODs[key].StartSession(evt)
 	if err != nil {
-		return nil, fmt.Errorf("failed to start session in VOD, %v", err)
+		return fmt.Errorf("failed to start session in VOD, %v", err)
 	}
 	lb.vodSessionMap[evt.SessionID] = key
-	return lb.MakeStatus(evt.Time), nil
+	return nil
 }
 
 // EndSession :
-func (lb *LB) EndSession(evt data.SessionEvent) (*status.Status, error) {
+func (lb *LB) EndSession(evt data.SessionEvent) error {
 	key, ok := lb.vodSessionMap[evt.SessionID]
 	if !ok {
-		return nil, fmt.Errorf("not exists session %v", evt.SessionID)
+		return fmt.Errorf("not exists session %v", evt.SessionID)
 	}
 	err := lb.VODs[key].EndSession(evt)
 	if err != nil {
-		return nil, fmt.Errorf("failed to end session in VOD, %v", err)
+		return fmt.Errorf("failed to end session in VOD, %v", err)
 	}
 	delete(lb.vodSessionMap, evt.SessionID)
-	return lb.MakeStatus(evt.Time), nil
+	return nil
 }
 
 // StartChunk :
-func (lb *LB) StartChunk(evt data.ChunkEvent) (*status.Status, error) {
+func (lb *LB) StartChunk(evt data.ChunkEvent) error {
 	key, ok := lb.vodSessionMap[evt.SessionID]
 	if !ok {
-		return nil, fmt.Errorf("not exists session %v", evt.SessionID)
+		return fmt.Errorf("not exists session %v", evt.SessionID)
 	}
 	err := lb.Caches[key].StartChunk(evt)
 	if err != nil {
-		return nil, fmt.Errorf("failed to start chunk in cache, %v", err)
+		return fmt.Errorf("failed to start chunk in cache, %v", err)
 	}
-	return lb.MakeStatus(evt.Time), nil
+	return nil
 }
 
 // EndChunk :
-func (lb *LB) EndChunk(evt data.ChunkEvent) (*status.Status, error) {
+func (lb *LB) EndChunk(evt data.ChunkEvent) error {
 	key, ok := lb.vodSessionMap[evt.SessionID]
 	if !ok {
-		return nil, fmt.Errorf("not exists session %v", evt.SessionID)
+		return fmt.Errorf("not exists session %v", evt.SessionID)
 	}
 	err := lb.Caches[key].EndChunk(evt)
 	if err != nil {
-		return nil, fmt.Errorf("failed to end chunk in cache, %v", err)
+		return fmt.Errorf("failed to end chunk in cache, %v", err)
 	}
-	return lb.MakeStatus(evt.Time), nil
+	return nil
 }
 
 // MakeStatus :
