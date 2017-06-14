@@ -61,8 +61,10 @@ func (c *Cache) StartChunk(evt data.ChunkEvent) error {
 
 // EndChunk :
 func (c *Cache) EndChunk(evt data.ChunkEvent) error {
+	// cache miss된 chunk에 한해 origin bps 감소 처리
+	k := chunkSession(evt)
 	for i, v := range c.MissChunks {
-		if v == chunkSession(evt) {
+		if v == k {
 			c.OriginBps -= evt.Bps
 			c.MissChunks = append(c.MissChunks[:i], c.MissChunks[i+1:]...)
 			return nil
