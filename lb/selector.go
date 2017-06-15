@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"log"
 	"math"
+	"sort"
+	"time"
 
 	"github.com/castisdev/cdn-simul/data"
 	"github.com/castisdev/cdn-simul/lb/vod"
@@ -111,4 +113,125 @@ func (s *SameWeightDup2) VODSelect(evt data.SessionEvent, lb *LB) (vod.Key, erro
 		}
 	}
 	return SelectAvailableFirst(evt, lb, vodKeys)
+}
+
+// HighLowGroup : 1시간동안 인기 순위 100위 내 파일들은 고성능 서버 그룹으로
+type HighLowGroup struct {
+	WeightStorage
+	highHash        *consistenthash.Map
+	contentHits     map[string]int
+	updatedHotListT time.Time
+	updateHotPeriod time.Duration
+	hotList         []contentHit
+	hotThreshold    int
+}
+
+// NewHighLowGroup :
+func NewHighLowGroup(updateHotPeriod time.Duration, hotRankThreshold int) VODSelector {
+	return &HighLowGroup{
+		contentHits:     make(map[string]int),
+		updateHotPeriod: updateHotPeriod,
+		hotThreshold:    hotRankThreshold,
+	}
+}
+
+// Init :
+func (s *HighLowGroup) Init(cfg data.Config) error {
+	lowHash := consistenthash.New(100, nil)
+	highHash := consistenthash.New(100, nil)
+	lowKeyMap := make(map[string]int)
+	highKeyMap := make(map[string]int)
+	for _, v := range cfg.VODs {
+		high := true
+		if v.LimitBps < 5000000000 {
+			high = false
+		}
+		GB := int64(1024 * 1024 * 1024)
+		Gbps := int64(1000 * 1000 * 1000)
+
+		hashWeight := int(v.StorageSize / (100 * GB))
+		lowKeyMap[v.VodID] = hashWeight
+		fmt.Printf("%s: hash-weight(%v)\n", v.VodID, hashWeight)
+
+		if high {
+			highWeight := int(v.LimitBps / (1 * Gbps))
+			highKeyMap[v.VodID] = highWeight
+			fmt.Printf("%s: (high) hash-weight(%v)\n", v.VodID, highWeight)
+		}
+	}
+	highHash.Add(highKeyMap)
+	lowHash.Add(lowKeyMap)
+	s.highHash = highHash
+	s.hash = lowHash
+	return nil
+}
+
+// VODSelect :
+func (s *HighLowGroup) VODSelect(evt data.SessionEvent, lb *LB) (vod.Key, error) {
+	if s.updatedHotListT.IsZero() {
+		s.updatedHotListT = evt.Time
+	} else if evt.Time.Sub(s.updatedHotListT) >= s.updateHotPeriod {
+		s.updateHotList()
+		s.updatedHotListT = evt.Time
+	}
+
+	if v, ok := s.contentHits[evt.FileName]; ok {
+		s.contentHits[evt.FileName] = v + 1
+	} else {
+		s.contentHits[evt.FileName] = 1
+	}
+
+	if s.isHot(evt.FileName) {
+		vodKeys := s.highHash.GetItems(evt.FileName)
+		k, err := SelectAvailableFirst(evt, lb, vodKeys)
+		if err != nil {
+			vodKeys = s.hash.GetItems(evt.FileName)
+			return SelectAvailableFirst(evt, lb, vodKeys)
+		}
+		return k, err
+	}
+	vodKeys := s.hash.GetItems(evt.FileName)
+	return SelectAvailableFirst(evt, lb, vodKeys)
+}
+
+type contentHit struct {
+	filename string
+	hit      int
+}
+
+type contentHitSorter []contentHit
+
+func (chs contentHitSorter) Len() int {
+	return len(chs)
+}
+func (chs contentHitSorter) Swap(i, j int) {
+	chs[i], chs[j] = chs[j], chs[i]
+}
+func (chs contentHitSorter) Less(i, j int) bool {
+	return chs[i].hit < chs[j].hit
+}
+
+func (s *HighLowGroup) updateHotList() {
+	var list []contentHit
+	for k, v := range s.contentHits {
+		list = append(list, contentHit{filename: k, hit: v})
+	}
+	sort.Sort(contentHitSorter(list))
+	s.hotList = list
+
+	for k := range s.contentHits {
+		delete(s.contentHits, k)
+	}
+}
+
+func (s *HighLowGroup) isHot(file string) bool {
+	for i, v := range s.hotList {
+		if v.filename == file {
+			return true
+		}
+		if i >= s.hotThreshold {
+			break
+		}
+	}
+	return false
 }

@@ -25,6 +25,8 @@ func NewVODSelector(t string) lb.VODSelector {
 		return &lb.SameWeightDup2{}
 	case "weight-storage":
 		return &lb.WeightStorage{}
+	case "high-low":
+		return lb.NewHighLowGroup(24*time.Hour, 100)
 	}
 	return &lb.SameHashingWeight{}
 }
@@ -44,7 +46,7 @@ func main() {
 	flag.StringVar(&dbUser, "db-user", "", "DB username")
 	flag.StringVar(&dbPass, "db-pass", "", "DB password")
 	flag.StringVar(&dbName, "db-name", "mydb", "database name")
-	flag.StringVar(&lb, "lb", "hash", "hash | weight-storage | weight-storage-bps | dup2")
+	flag.StringVar(&lb, "lb", "hash", "hash | weight-storage | weight-storage-bps | dup2 | high-low")
 
 	flag.Parse()
 
