@@ -42,14 +42,20 @@ func chunkSession(evt data.ChunkEvent) string {
 
 // StartChunk :
 func (c *Cache) StartChunk(evt data.ChunkEvent) error {
-	n, ok := c.Get(filepath(evt))
+	if evt.Bypass {
+		c.MissCount++
+		c.OriginBps += evt.Bps
+		return nil
+	}
+	key := filepath(evt)
+	n, ok := c.Get(key)
 	if ok {
 		if n != evt.ChunkSize {
 			return fmt.Errorf("invalid chunk size, cached(%v) evt(%v)", n, evt.ChunkSize)
 		}
 		c.HitCount++
 	} else {
-		err := c.Add(filepath(evt), evt.ChunkSize)
+		err := c.Add(key, evt.ChunkSize)
 		if err != nil {
 			return err
 		}
@@ -62,6 +68,10 @@ func (c *Cache) StartChunk(evt data.ChunkEvent) error {
 
 // EndChunk :
 func (c *Cache) EndChunk(evt data.ChunkEvent) error {
+	if evt.Bypass {
+		c.OriginBps -= evt.Bps
+		return nil
+	}
 	k := chunkSession(evt)
 	if _, ok := c.MissChunks[k]; ok {
 		c.OriginBps -= evt.Bps

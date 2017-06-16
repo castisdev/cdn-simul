@@ -52,10 +52,11 @@ type ChunkEvent struct {
 	Bps       int64
 	Index     int64
 	ChunkSize int64
+	Bypass    bool
 }
 
 func (s ChunkEvent) String() string {
 	layout := "2006-01-02 15:04:05.000"
-	return fmt.Sprintf("Chunk %s %s %s size:%d bps:%d idx:%d chunksize:%d",
-		s.Time.Format(layout), s.SessionID, s.FileName, s.FileSize, s.Bps, s.Index, s.ChunkSize)
+	return fmt.Sprintf("Chunk %s %s %s size:%d bps:%d idx:%d chunksize:%d bypass:%v",
+		s.Time.Format(layout), s.SessionID, s.FileName, s.FileSize, s.Bps, s.Index, s.ChunkSize, s.Bypass)
 }

@@ -15,12 +15,13 @@ const chunkSize int64 = 2000000 //2 * 1024 * 1024
 
 // Options :
 type Options struct {
-	MaxReadEventCount   int
-	InfluxDBAddr        string
-	InfluxDBName        string
-	InfluxDBUser        string
-	InfluxDBPass        string
-	SnapshotWritePeriod time.Duration
+	MaxReadEventCount int
+	InfluxDBAddr      string
+	InfluxDBName      string
+	InfluxDBUser      string
+	InfluxDBPass      string
+	StatusWritePeriod time.Duration
+	BypassFile        string
 }
 
 var layout = "2006-01-02 15:04:05.000"
@@ -91,11 +92,12 @@ type endEvent struct {
 	index          int
 	duration       time.Duration
 	sessionEndTime time.Time
+	bypass         bool
 }
 
 func (e endEvent) String() string {
-	return fmt.Sprintf("%v %s %s %s %8d %4d %v %s",
-		e.endType, e.time.Format(layout), e.sid, e.filename, e.bps, e.index, e.duration, e.sessionEndTime.Format(layout))
+	return fmt.Sprintf("%v %s %s %s %8d %4d %v %s %v",
+		e.endType, e.time.Format(layout), e.sid, e.filename, e.bps, e.index, e.duration, e.sessionEndTime.Format(layout), e.bypass)
 }
 
 // Simulator :
@@ -106,10 +108,11 @@ type Simulator struct {
 	writer         StatusWriter
 	lb             *lb.LB
 	internalEvents *eventHeap
+	bypassMap      map[string]interface{}
 }
 
 // NewSimulator :
-func NewSimulator(cfg data.Config, opt Options, s lb.VODSelector, r EventReader, w StatusWriter) *Simulator {
+func NewSimulator(cfg data.Config, opt Options, s lb.VODSelector, r EventReader, w StatusWriter, bypass []string) *Simulator {
 	lb, err := lb.New(cfg, s)
 	if err != nil {
 		log.Fatalf("failed to create lb instance, %v", err)
@@ -118,14 +121,19 @@ func NewSimulator(cfg data.Config, opt Options, s lb.VODSelector, r EventReader,
 	ie := &eventHeap{}
 	heap.Init(ie)
 
-	return &Simulator{
+	si := &Simulator{
 		cfg:            cfg,
 		opt:            opt,
 		reader:         r,
 		writer:         w,
 		lb:             lb,
 		internalEvents: ie,
+		bypassMap:      make(map[string]interface{}),
 	}
+	for _, v := range bypass {
+		si.bypassMap[v] = nil
+	}
+	return si
 }
 
 // Run :
@@ -150,7 +158,7 @@ func (s *Simulator) Run() {
 
 		s.processEventsUntil(procT, s.internalEvents, s.lb)
 
-		if s.opt.SnapshotWritePeriod == 0 {
+		if s.opt.StatusWritePeriod == 0 {
 			log.Printf("session event: %s\n", ev)
 		}
 
@@ -166,7 +174,7 @@ func (s *Simulator) Run() {
 		if err != nil {
 			log.Fatalf("failed to process start-session-event, %v", err)
 		}
-		if s.opt.SnapshotWritePeriod == 0 {
+		if s.opt.StatusWritePeriod == 0 {
 			log.Printf("session start: %s\n", sEvt)
 			st := s.lb.Status(sEvt.Time)
 			s.writeStatus(ev.Started, *st, s.cfg, s.opt)
@@ -174,7 +182,7 @@ func (s *Simulator) Run() {
 			st := s.lb.Status(sEvt.Time)
 			s.writeStatus(ev.Started, *st, s.cfg, s.opt)
 			for {
-				nextLogT = nextLogT.Add(s.opt.SnapshotWritePeriod)
+				nextLogT = nextLogT.Add(s.opt.StatusWritePeriod)
 				if nextLogT.After(ev.Started) {
 					break
 				}
@@ -183,6 +191,7 @@ func (s *Simulator) Run() {
 
 		idx := int(ev.Offset / chunkSize)
 		du := time.Duration(float64(8*chunkSize)/float64(ev.Bandwidth)*1000) * time.Millisecond
+		_, bypass := s.bypassMap[ev.Filename]
 		cEvt := data.ChunkEvent{
 			Time:      ev.Started,
 			SessionID: ev.SID,
@@ -190,12 +199,13 @@ func (s *Simulator) Run() {
 			Bps:       int64(ev.Bandwidth),
 			Index:     int64(idx),
 			ChunkSize: chunkSize,
+			Bypass:    bypass,
 		}
 		err = s.lb.StartChunk(cEvt)
 		if err != nil {
 			log.Fatalf("failed to process start-chunk-event, %v", err)
 		}
-		if s.opt.SnapshotWritePeriod == 0 {
+		if s.opt.StatusWritePeriod == 0 {
 			log.Printf("chunk start: %s\n", cEvt)
 			st := s.lb.Status(cEvt.Time)
 			s.writeStatus(ev.Started, *st, s.cfg, s.opt)
@@ -210,6 +220,7 @@ func (s *Simulator) Run() {
 			index:          idx,
 			duration:       du,
 			sessionEndTime: ev.Ended,
+			bypass:         bypass,
 		}
 		if ecEv.time.Sub(ev.Ended) >= 0 {
 			ecEv.time = ev.Ended.Add(-time.Millisecond)
@@ -240,7 +251,7 @@ func (s *Simulator) processEventsUntil(ti time.Time, events *eventHeap, lb *lb.L
 		e := heap.Pop(events)
 		endEv := e.(endEvent)
 
-		if s.opt.SnapshotWritePeriod == 0 {
+		if s.opt.StatusWritePeriod == 0 {
 			log.Printf("%s\n", endEv)
 		}
 
@@ -259,12 +270,13 @@ func (s *Simulator) processEventsUntil(ti time.Time, events *eventHeap, lb *lb.L
 				Bps:       int64(endEv.bps),
 				Index:     int64(endEv.index),
 				ChunkSize: chunkSize,
+				Bypass:    endEv.bypass,
 			}
 			err = lb.EndChunk(evt)
 			if err != nil {
 				log.Fatalf("failed to process end-chunk-event, %v", err)
 			}
-			if s.opt.SnapshotWritePeriod == 0 {
+			if s.opt.StatusWritePeriod == 0 {
 				log.Printf("chunk end: %s\n", evt)
 				st := s.lb.Status(evt.Time)
 				s.writeStatus(evt.Time, *st, s.cfg, s.opt)
@@ -278,7 +290,7 @@ func (s *Simulator) processEventsUntil(ti time.Time, events *eventHeap, lb *lb.L
 			if err != nil {
 				log.Fatalf("failed to process start-chunk-event, %v", err)
 			}
-			if s.opt.SnapshotWritePeriod == 0 {
+			if s.opt.StatusWritePeriod == 0 {
 				log.Printf("chunk start: %s\n", evt)
 				st := s.lb.Status(evt.Time)
 				s.writeStatus(evt.Time, *st, s.cfg, s.opt)
@@ -303,7 +315,7 @@ func (s *Simulator) processEventsUntil(ti time.Time, events *eventHeap, lb *lb.L
 			if err != nil {
 				log.Fatalf("failed to process end-sesison-event, %v", err)
 			}
-			if s.opt.SnapshotWritePeriod == 0 {
+			if s.opt.StatusWritePeriod == 0 {
 				log.Printf("session end: %s\n", evt)
 				st := s.lb.Status(evt.Time)
 				s.writeStatus(evt.Time, *st, s.cfg, s.opt)

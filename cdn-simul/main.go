@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"runtime/pprof"
+	"strings"
 	"time"
 
 	"github.com/castisdev/cdn-simul/data"
@@ -32,7 +33,7 @@ func NewVODSelector(algorithm string, hotListUpdatePeriod time.Duration, hotRank
 }
 
 func main() {
-	var cfgFile, dbFile, cpuprofile, memprofile, lp, dbAddr, dbName, lb, hotListUpdatePeriod string
+	var cfgFile, dbFile, cpuprofile, memprofile, lp, dbAddr, dbName, lb, hotListUpdatePeriod, bypass string
 	var readEventCount, hotRankLimit int
 
 	flag.StringVar(&cfgFile, "cfg", "cdn-simul.json", "config file")
@@ -46,6 +47,7 @@ func main() {
 	flag.StringVar(&lb, "lb", "hash", "hash | weight-storage | weight-storage-bps | dup2 | high-low")
 	flag.StringVar(&hotListUpdatePeriod, "hot-period", "24h", "hot list update period (high-low)")
 	flag.IntVar(&hotRankLimit, "hot-rank", 100, "rank limit of hot list, that contents will be served in high group (high-low)")
+	flag.StringVar(&bypass, "bypass", "", "text file that has contents list to bypass")
 
 	flag.Parse()
 
@@ -55,10 +57,11 @@ func main() {
 	}
 
 	opt := simul.Options{
-		MaxReadEventCount:   readEventCount,
-		InfluxDBAddr:        dbAddr,
-		InfluxDBName:        dbName,
-		SnapshotWritePeriod: logPeriod,
+		MaxReadEventCount: readEventCount,
+		InfluxDBAddr:      dbAddr,
+		InfluxDBName:      dbName,
+		StatusWritePeriod: logPeriod,
+		BypassFile:        bypass,
 	}
 
 	if cpuprofile != "" {
@@ -94,11 +97,20 @@ func main() {
 	}
 	defer db.Close()
 
+	var bypassList []string
+	if opt.BypassFile != "" {
+		b, err := ioutil.ReadFile(opt.BypassFile)
+		if err != nil {
+			log.Fatalf("failed to read bypass file, %v", f)
+		}
+		bypassList = strings.Split(string(b), "\n")
+	}
+
 	du, err := time.ParseDuration(hotListUpdatePeriod)
 	if err != nil {
 		log.Fatalf("failed to parse duration: %v", err)
 	}
-	si := simul.NewSimulator(cfg, opt, NewVODSelector(lb, du, hotRankLimit), simul.NewDBEventReader(db), writer)
+	si := simul.NewSimulator(cfg, opt, NewVODSelector(lb, du, hotRankLimit), simul.NewDBEventReader(db), writer, bypassList)
 
 	now := time.Now()
 	si.Run()
