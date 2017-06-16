@@ -160,6 +160,7 @@ func (s *Simulator) Run() {
 			SessionID: ev.SID,
 			FileName:  ev.Filename,
 			Bps:       int64(ev.Bandwidth),
+			Duration:  ev.Ended.Sub(ev.Started),
 		}
 		err = s.lb.StartSession(sEvt)
 		if err != nil {

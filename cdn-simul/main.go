@@ -17,8 +17,8 @@ import (
 )
 
 // NewVODSelector :
-func NewVODSelector(t string) lb.VODSelector {
-	switch t {
+func NewVODSelector(algorithm string, hotListUpdatePeriod time.Duration, hotRankLimit int) lb.VODSelector {
+	switch algorithm {
 	case "weight-storage-bps":
 		return &lb.WeightStorageBps{}
 	case "dup2":
@@ -26,15 +26,14 @@ func NewVODSelector(t string) lb.VODSelector {
 	case "weight-storage":
 		return &lb.WeightStorage{}
 	case "high-low":
-		return lb.NewHighLowGroup(24*time.Hour, 100)
+		return lb.NewHighLowGroup(hotListUpdatePeriod, hotRankLimit)
 	}
 	return &lb.SameHashingWeight{}
 }
 
 func main() {
-	var cfgFile, dbFile, cpuprofile, memprofile, lp, lb string
-	var dbAddr, dbUser, dbPass, dbName string
-	var readEventCount int
+	var cfgFile, dbFile, cpuprofile, memprofile, lp, dbAddr, dbName, lb, hotListUpdatePeriod string
+	var readEventCount, hotRankLimit int
 
 	flag.StringVar(&cfgFile, "cfg", "cdn-simul.json", "config file")
 	flag.StringVar(&dbFile, "db", "chunk.db", "event db")
@@ -43,10 +42,10 @@ func main() {
 	flag.StringVar(&memprofile, "memprofile", "", "write memory profile")
 	flag.StringVar(&lp, "log-period", "0s", "status logging period (second). if 0, print log after every event")
 	flag.StringVar(&dbAddr, "db-addr", "", "DB address. if empty, not use DB. ex: localhost:8086")
-	flag.StringVar(&dbUser, "db-user", "", "DB username")
-	flag.StringVar(&dbPass, "db-pass", "", "DB password")
 	flag.StringVar(&dbName, "db-name", "mydb", "database name")
 	flag.StringVar(&lb, "lb", "hash", "hash | weight-storage | weight-storage-bps | dup2 | high-low")
+	flag.StringVar(&hotListUpdatePeriod, "hot-period", "24h", "hot list update period (high-low)")
+	flag.IntVar(&hotRankLimit, "hot-rank", 100, "rank limit of hot list, that contents will be served in high group (high-low)")
 
 	flag.Parse()
 
@@ -59,8 +58,6 @@ func main() {
 		MaxReadEventCount:   readEventCount,
 		InfluxDBAddr:        dbAddr,
 		InfluxDBName:        dbName,
-		InfluxDBUser:        dbUser,
-		InfluxDBPass:        dbPass,
 		SnapshotWritePeriod: logPeriod,
 	}
 
@@ -96,7 +93,12 @@ func main() {
 		log.Fatalf("failed to open db, %v", err)
 	}
 	defer db.Close()
-	si := simul.NewSimulator(cfg, opt, NewVODSelector(lb), simul.NewDBEventReader(db), writer)
+
+	du, err := time.ParseDuration(hotListUpdatePeriod)
+	if err != nil {
+		log.Fatalf("failed to parse duration: %v", err)
+	}
+	si := simul.NewSimulator(cfg, opt, NewVODSelector(lb, du, hotRankLimit), simul.NewDBEventReader(db), writer)
 
 	now := time.Now()
 	si.Run()

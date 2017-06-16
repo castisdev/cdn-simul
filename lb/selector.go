@@ -119,7 +119,7 @@ func (s *SameWeightDup2) VODSelect(evt data.SessionEvent, lb *LB) (vod.Key, erro
 type HighLowGroup struct {
 	WeightStorage
 	highHash        *consistenthash.Map
-	contentHits     map[string]int
+	contentHits     map[string]int64
 	updatedHotListT time.Time
 	updateHotPeriod time.Duration
 	hotList         []contentHit
@@ -129,7 +129,7 @@ type HighLowGroup struct {
 // NewHighLowGroup :
 func NewHighLowGroup(updateHotPeriod time.Duration, hotRankThreshold int) VODSelector {
 	return &HighLowGroup{
-		contentHits:     make(map[string]int),
+		contentHits:     make(map[string]int64),
 		updateHotPeriod: updateHotPeriod,
 		hotThreshold:    hotRankThreshold,
 	}
@@ -137,8 +137,9 @@ func NewHighLowGroup(updateHotPeriod time.Duration, hotRankThreshold int) VODSel
 
 // Init :
 func (s *HighLowGroup) Init(cfg data.Config) error {
-	lowHash := consistenthash.New(100, nil)
-	highHash := consistenthash.New(100, nil)
+	fmt.Printf("high-low: update-period:%v hot-rank:%v\n", s.updateHotPeriod, s.hotThreshold)
+	lowHash := consistenthash.New(1000, nil)
+	highHash := consistenthash.New(1000, nil)
 	lowKeyMap := make(map[string]int)
 	highKeyMap := make(map[string]int)
 	for _, v := range cfg.VODs {
@@ -174,11 +175,12 @@ func (s *HighLowGroup) VODSelect(evt data.SessionEvent, lb *LB) (vod.Key, error)
 		s.updateHotList()
 		s.updatedHotListT = evt.Time
 	}
-
+	// file bitrate는 100k보다 크다고 가정
+	hitWeight := int64(evt.Duration.Seconds()) * int64(evt.Bps/100000)
 	if v, ok := s.contentHits[evt.FileName]; ok {
-		s.contentHits[evt.FileName] = v + 1
+		s.contentHits[evt.FileName] = v + hitWeight
 	} else {
-		s.contentHits[evt.FileName] = 1
+		s.contentHits[evt.FileName] = hitWeight
 	}
 
 	if s.isHot(evt.FileName) {
@@ -196,7 +198,11 @@ func (s *HighLowGroup) VODSelect(evt data.SessionEvent, lb *LB) (vod.Key, error)
 
 type contentHit struct {
 	filename string
-	hit      int
+	hit      int64
+}
+
+func (c contentHit) String() string {
+	return fmt.Sprintf("%v %v", c.filename, c.hit)
 }
 
 type contentHitSorter []contentHit
@@ -208,7 +214,7 @@ func (chs contentHitSorter) Swap(i, j int) {
 	chs[i], chs[j] = chs[j], chs[i]
 }
 func (chs contentHitSorter) Less(i, j int) bool {
-	return chs[i].hit < chs[j].hit
+	return chs[i].hit > chs[j].hit
 }
 
 func (s *HighLowGroup) updateHotList() {
@@ -221,6 +227,12 @@ func (s *HighLowGroup) updateHotList() {
 
 	for k := range s.contentHits {
 		delete(s.contentHits, k)
+	}
+	for i, v := range s.hotList {
+		fmt.Printf("hitlist[%4d] : %s\n", i, v)
+		if i >= 9999 {
+			break
+		}
 	}
 }
 

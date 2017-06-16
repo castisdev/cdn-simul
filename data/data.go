@@ -35,11 +35,12 @@ type SessionEvent struct {
 	FileName  string
 	FileSize  int64
 	Bps       int64
+	Duration  time.Duration
 }
 
 func (s SessionEvent) String() string {
 	layout := "2006-01-02 15:04:05.000"
-	return fmt.Sprintf("Session %s %s %s size:%d bps:%d", s.Time.Format(layout), s.SessionID, s.FileName, s.FileSize, s.Bps)
+	return fmt.Sprintf("Session %s %s %s size:%d bps:%d duration:%v", s.Time.Format(layout), s.SessionID, s.FileName, s.FileSize, s.Bps, s.Duration)
 }
 
 // ChunkEvent :
