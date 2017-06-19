@@ -32,12 +32,13 @@ func NewCache(limitSize int64) (*Cache, error) {
 	return m, nil
 }
 
-func filepath(evt *data.ChunkEvent) string {
-	return evt.FileName + "-" + strconv.FormatInt(evt.Index, 10)
+func filepath(evt *data.ChunkEvent) int {
+	return evt.IntFileName*10000 + int(evt.Index)
 }
 
 func chunkSession(evt *data.ChunkEvent) string {
-	return evt.SessionID + "-" + filepath(evt)
+
+	return evt.SessionID + "-" + strconv.Itoa(filepath(evt))
 }
 
 // StartChunk :
@@ -93,7 +94,7 @@ func (c *Cache) init() error {
 }
 
 // Add :
-func (c *Cache) Add(relFilePath string, size int64) error {
+func (c *Cache) Add(relFilePath int, size int64) error {
 	key := relFilePath
 
 	if c.LimitSize <= 0 || c.LimitSize < size {
@@ -112,7 +113,7 @@ func (c *Cache) Add(relFilePath string, size int64) error {
 }
 
 // Get :
-func (c *Cache) Get(filepath string) (size int64, ok bool) {
+func (c *Cache) Get(filepath int) (size int64, ok bool) {
 	if c.Lru == nil {
 		return
 	}

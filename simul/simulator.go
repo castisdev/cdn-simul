@@ -88,6 +88,7 @@ type endEvent struct {
 	time           time.Time
 	sid            string
 	filename       string
+	intFilename    int
 	bps            int
 	index          int
 	duration       time.Duration
@@ -109,6 +110,8 @@ type Simulator struct {
 	lb             *lb.LB
 	internalEvents *eventHeap
 	bypassMap      map[string]interface{}
+	filenameMap    map[string]int
+	filenameSeed   int
 }
 
 // NewSimulator :
@@ -129,11 +132,22 @@ func NewSimulator(cfg data.Config, opt Options, s lb.VODSelector, r EventReader,
 		lb:             lb,
 		internalEvents: ie,
 		bypassMap:      make(map[string]interface{}),
+		filenameMap:    make(map[string]int),
 	}
 	for _, v := range bypass {
 		si.bypassMap[v] = nil
 	}
 	return si
+}
+
+func (s *Simulator) getFilename(filename string) int {
+	if value, ok := s.filenameMap[filename]; ok {
+		return value
+	}
+
+	s.filenameSeed++
+	s.filenameMap[filename] = s.filenameSeed
+	return s.filenameSeed
 }
 
 // Run :
@@ -162,6 +176,7 @@ func (s *Simulator) Run() {
 			log.Printf("session event: %s\n", ev)
 		}
 
+		fn := s.getFilename(ev.Filename)
 		var err error
 		sEvt := data.SessionEvent{
 			Time:      ev.Started,
@@ -193,13 +208,14 @@ func (s *Simulator) Run() {
 		du := time.Duration(float64(8*chunkSize)/float64(ev.Bandwidth)*1000) * time.Millisecond
 		_, bypass := s.bypassMap[ev.Filename]
 		cEvt := data.ChunkEvent{
-			Time:      ev.Started,
-			SessionID: ev.SID,
-			FileName:  ev.Filename,
-			Bps:       int64(ev.Bandwidth),
-			Index:     int64(idx),
-			ChunkSize: chunkSize,
-			Bypass:    bypass,
+			Time:        ev.Started,
+			SessionID:   ev.SID,
+			FileName:    ev.Filename,
+			IntFileName: fn,
+			Bps:         int64(ev.Bandwidth),
+			Index:       int64(idx),
+			ChunkSize:   chunkSize,
+			Bypass:      bypass,
 		}
 		err = s.lb.StartChunk(&cEvt)
 		if err != nil {
@@ -216,6 +232,7 @@ func (s *Simulator) Run() {
 			endType:        chunkEnd,
 			sid:            ev.SID,
 			filename:       ev.Filename,
+			intFilename:    fn,
 			bps:            ev.Bandwidth,
 			index:          idx,
 			duration:       du,
@@ -264,13 +281,14 @@ func (s *Simulator) processEventsUntil(ti time.Time, events *eventHeap, lb *lb.L
 		diffLastChunkTandSessionEndT := time.Millisecond
 		if endEv.endType == chunkEnd {
 			evt := data.ChunkEvent{
-				Time:      endEv.time,
-				SessionID: endEv.sid,
-				FileName:  endEv.filename,
-				Bps:       int64(endEv.bps),
-				Index:     int64(endEv.index),
-				ChunkSize: chunkSize,
-				Bypass:    endEv.bypass,
+				Time:        endEv.time,
+				SessionID:   endEv.sid,
+				FileName:    endEv.filename,
+				IntFileName: endEv.intFilename,
+				Bps:         int64(endEv.bps),
+				Index:       int64(endEv.index),
+				ChunkSize:   chunkSize,
+				Bypass:      endEv.bypass,
 			}
 			err = lb.EndChunk(&evt)
 			if err != nil {

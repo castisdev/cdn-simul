@@ -45,14 +45,15 @@ func (s SessionEvent) String() string {
 
 // ChunkEvent :
 type ChunkEvent struct {
-	Time      time.Time
-	SessionID string
-	FileName  string
-	FileSize  int64
-	Bps       int64
-	Index     int64
-	ChunkSize int64
-	Bypass    bool
+	Time        time.Time
+	SessionID   string
+	FileName    string
+	IntFileName int
+	FileSize    int64
+	Bps         int64
+	Index       int64
+	ChunkSize   int64
+	Bypass      bool
 }
 
 func (s ChunkEvent) String() string {
