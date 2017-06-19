@@ -20,7 +20,7 @@ type VOD struct {
 }
 
 // StartSession :
-func (v *VOD) StartSession(evt data.SessionEvent) error {
+func (v *VOD) StartSession(evt *data.SessionEvent) error {
 	if v.CurSessionCount+1 > v.LimitSessionCount {
 		return fmt.Errorf("reaches limit session count, cur(%v) limit(%v)", v.CurSessionCount, v.LimitSessionCount)
 	}
@@ -33,7 +33,7 @@ func (v *VOD) StartSession(evt data.SessionEvent) error {
 }
 
 // EndSession :
-func (v *VOD) EndSession(evt data.SessionEvent) error {
+func (v *VOD) EndSession(evt *data.SessionEvent) error {
 	v.CurSessionCount--
 	v.CurBps -= evt.Bps
 	return nil

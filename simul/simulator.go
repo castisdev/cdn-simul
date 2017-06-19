@@ -58,14 +58,14 @@ func FindConfig(c *data.Config, k string) data.VODConfig {
 	return data.VODConfig{}
 }
 
-type eventHeap []endEvent
+type eventHeap []*endEvent
 
 func (h eventHeap) Len() int           { return len(h) }
 func (h eventHeap) Less(i, j int) bool { return h[i].time.Before(h[j].time) }
 func (h eventHeap) Swap(i, j int)      { h[i], h[j] = h[j], h[i] }
 
 func (h *eventHeap) Push(x interface{}) {
-	*h = append(*h, x.(endEvent))
+	*h = append(*h, x.(*endEvent))
 }
 
 func (h *eventHeap) Pop() interface{} {
@@ -170,7 +170,7 @@ func (s *Simulator) Run() {
 			Bps:       int64(ev.Bandwidth),
 			Duration:  ev.Ended.Sub(ev.Started),
 		}
-		err = s.lb.StartSession(sEvt)
+		err = s.lb.StartSession(&sEvt)
 		if err != nil {
 			log.Fatalf("failed to process start-session-event, %v", err)
 		}
@@ -201,7 +201,7 @@ func (s *Simulator) Run() {
 			ChunkSize: chunkSize,
 			Bypass:    bypass,
 		}
-		err = s.lb.StartChunk(cEvt)
+		err = s.lb.StartChunk(&cEvt)
 		if err != nil {
 			log.Fatalf("failed to process start-chunk-event, %v", err)
 		}
@@ -225,7 +225,7 @@ func (s *Simulator) Run() {
 		if ecEv.time.Sub(ev.Ended) >= 0 {
 			ecEv.time = ev.Ended.Add(-time.Millisecond)
 		}
-		heap.Push(s.internalEvents, ecEv)
+		heap.Push(s.internalEvents, &ecEv)
 
 		esEv := endEvent{
 			time:           ev.Ended,
@@ -237,7 +237,7 @@ func (s *Simulator) Run() {
 			duration:       du,
 			sessionEndTime: ev.Ended,
 		}
-		heap.Push(s.internalEvents, esEv)
+		heap.Push(s.internalEvents, &esEv)
 	}
 }
 func (s *Simulator) writeStatus(ti time.Time, st status.Status, cfg data.Config, opt Options) {
@@ -249,7 +249,7 @@ func (s *Simulator) writeStatus(ti time.Time, st status.Status, cfg data.Config,
 func (s *Simulator) processEventsUntil(ti time.Time, events *eventHeap, lb *lb.LB) {
 	for events.Len() > 0 {
 		e := heap.Pop(events)
-		endEv := e.(endEvent)
+		endEv := e.(*endEvent)
 
 		if s.opt.StatusWritePeriod == 0 {
 			log.Printf("%s\n", endEv)
@@ -272,13 +272,13 @@ func (s *Simulator) processEventsUntil(ti time.Time, events *eventHeap, lb *lb.L
 				ChunkSize: chunkSize,
 				Bypass:    endEv.bypass,
 			}
-			err = lb.EndChunk(evt)
+			err = lb.EndChunk(&evt)
 			if err != nil {
 				log.Fatalf("failed to process end-chunk-event, %v", err)
 			}
 			if s.opt.StatusWritePeriod == 0 {
 				log.Printf("chunk end: %s\n", evt)
-				st := s.lb.Status(evt.Time)
+				st := lb.Status(evt.Time)
 				s.writeStatus(evt.Time, *st, s.cfg, s.opt)
 			}
 			if endEv.sessionEndTime.Sub(endEv.time) == diffLastChunkTandSessionEndT {
@@ -286,13 +286,13 @@ func (s *Simulator) processEventsUntil(ti time.Time, events *eventHeap, lb *lb.L
 			}
 
 			evt.Index++
-			err = lb.StartChunk(evt)
+			err = lb.StartChunk(&evt)
 			if err != nil {
 				log.Fatalf("failed to process start-chunk-event, %v", err)
 			}
 			if s.opt.StatusWritePeriod == 0 {
 				log.Printf("chunk start: %s\n", evt)
-				st := s.lb.Status(evt.Time)
+				st := lb.Status(evt.Time)
 				s.writeStatus(evt.Time, *st, s.cfg, s.opt)
 			}
 
@@ -311,13 +311,13 @@ func (s *Simulator) processEventsUntil(ti time.Time, events *eventHeap, lb *lb.L
 				FileName:  endEv.filename,
 				Bps:       int64(endEv.bps),
 			}
-			err = lb.EndSession(evt)
+			err = lb.EndSession(&evt)
 			if err != nil {
 				log.Fatalf("failed to process end-sesison-event, %v", err)
 			}
 			if s.opt.StatusWritePeriod == 0 {
 				log.Printf("session end: %s\n", evt)
-				st := s.lb.Status(evt.Time)
+				st := lb.Status(evt.Time)
 				s.writeStatus(evt.Time, *st, s.cfg, s.opt)
 			}
 		}

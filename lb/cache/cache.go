@@ -15,7 +15,7 @@ type Cache struct {
 	HitCount    int64
 	MissCount   int64
 	OriginBps   int64
-	MissChunks  map[string]interface{}
+	MissChunks  map[string]struct{}
 	IsCacheFull bool
 }
 
@@ -23,7 +23,7 @@ type Cache struct {
 func NewCache(limitSize int64) (*Cache, error) {
 	m := &Cache{
 		LimitSize:  limitSize,
-		MissChunks: make(map[string]interface{}),
+		MissChunks: make(map[string]struct{}),
 	}
 
 	if err := m.init(); err != nil {
@@ -32,16 +32,16 @@ func NewCache(limitSize int64) (*Cache, error) {
 	return m, nil
 }
 
-func filepath(evt data.ChunkEvent) string {
+func filepath(evt *data.ChunkEvent) string {
 	return evt.FileName + "-" + strconv.FormatInt(evt.Index, 10)
 }
 
-func chunkSession(evt data.ChunkEvent) string {
+func chunkSession(evt *data.ChunkEvent) string {
 	return evt.SessionID + "-" + filepath(evt)
 }
 
 // StartChunk :
-func (c *Cache) StartChunk(evt data.ChunkEvent) error {
+func (c *Cache) StartChunk(evt *data.ChunkEvent) error {
 	if evt.Bypass {
 		c.MissCount++
 		c.OriginBps += evt.Bps
@@ -61,13 +61,13 @@ func (c *Cache) StartChunk(evt data.ChunkEvent) error {
 		}
 		c.MissCount++
 		c.OriginBps += evt.Bps
-		c.MissChunks[chunkSession(evt)] = nil
+		c.MissChunks[chunkSession(evt)] = struct{}{}
 	}
 	return nil
 }
 
 // EndChunk :
-func (c *Cache) EndChunk(evt data.ChunkEvent) error {
+func (c *Cache) EndChunk(evt *data.ChunkEvent) error {
 	if evt.Bypass {
 		c.OriginBps -= evt.Bps
 		return nil

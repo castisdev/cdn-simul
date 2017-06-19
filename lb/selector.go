@@ -14,7 +14,7 @@ import (
 
 // VODSelector :
 type VODSelector interface {
-	VODSelect(evt data.SessionEvent, lb *LB) (vod.Key, error)
+	VODSelect(evt *data.SessionEvent, lb *LB) (vod.Key, error)
 	Init(cfg data.Config) error
 }
 
@@ -24,7 +24,7 @@ type SameHashingWeight struct {
 }
 
 // VODSelect :
-func (s *SameHashingWeight) VODSelect(evt data.SessionEvent, lb *LB) (vod.Key, error) {
+func (s *SameHashingWeight) VODSelect(evt *data.SessionEvent, lb *LB) (vod.Key, error) {
 	vodKeys := s.hash.GetItems(evt.FileName)
 	return SelectAvailableFirst(evt, lb, vodKeys)
 }
@@ -44,7 +44,7 @@ func (s *SameHashingWeight) Init(cfg data.Config) error {
 }
 
 // SelectAvailableFirst :
-func SelectAvailableFirst(evt data.SessionEvent, lb *LB, vodKeys []string) (vod.Key, error) {
+func SelectAvailableFirst(evt *data.SessionEvent, lb *LB, vodKeys []string) (vod.Key, error) {
 	for _, v := range vodKeys {
 		k := vod.Key(v)
 		if lb.VODs[k].LimitSessionCount < lb.VODs[k].CurSessionCount+1 || lb.VODs[k].LimitBps < lb.VODs[k].CurBps+evt.Bps {
@@ -103,7 +103,7 @@ type SameWeightDup2 struct {
 }
 
 // VODSelect :
-func (s *SameWeightDup2) VODSelect(evt data.SessionEvent, lb *LB) (vod.Key, error) {
+func (s *SameWeightDup2) VODSelect(evt *data.SessionEvent, lb *LB) (vod.Key, error) {
 	vodKeys := s.hash.GetItems(evt.FileName)
 	if len(vodKeys) >= 2 {
 		vod0Avail := lb.VODs[vod.Key(vodKeys[0])].LimitBps - lb.VODs[vod.Key(vodKeys[0])].CurBps
@@ -168,7 +168,7 @@ func (s *HighLowGroup) Init(cfg data.Config) error {
 }
 
 // VODSelect :
-func (s *HighLowGroup) VODSelect(evt data.SessionEvent, lb *LB) (vod.Key, error) {
+func (s *HighLowGroup) VODSelect(evt *data.SessionEvent, lb *LB) (vod.Key, error) {
 	if s.updatedHotListT.IsZero() {
 		s.updatedHotListT = evt.Time
 	} else if evt.Time.Sub(s.updatedHotListT) >= s.updateHotPeriod {

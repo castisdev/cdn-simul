@@ -40,7 +40,7 @@ func New(cfg data.Config, selector VODSelector) (*LB, error) {
 }
 
 // SelectVOD :
-func (lb *LB) SelectVOD(evt data.SessionEvent) (vod.Key, error) {
+func (lb *LB) SelectVOD(evt *data.SessionEvent) (vod.Key, error) {
 	if len(lb.VODs) != len(lb.Caches) || len(lb.VODs) == 0 || len(lb.Caches) == 0 {
 		return "", fmt.Errorf("invalid cache/vod info")
 	}
@@ -53,7 +53,7 @@ func (lb *LB) Status(t time.Time) *status.Status {
 }
 
 // StartSession :
-func (lb *LB) StartSession(evt data.SessionEvent) error {
+func (lb *LB) StartSession(evt *data.SessionEvent) error {
 	key, err := lb.SelectVOD(evt)
 	if err != nil {
 		return fmt.Errorf("failed to select VOD, %v", err)
@@ -67,7 +67,7 @@ func (lb *LB) StartSession(evt data.SessionEvent) error {
 }
 
 // EndSession :
-func (lb *LB) EndSession(evt data.SessionEvent) error {
+func (lb *LB) EndSession(evt *data.SessionEvent) error {
 	key, ok := lb.vodSessionMap[evt.SessionID]
 	if !ok {
 		return fmt.Errorf("not exists session %v", evt.SessionID)
@@ -81,7 +81,7 @@ func (lb *LB) EndSession(evt data.SessionEvent) error {
 }
 
 // StartChunk :
-func (lb *LB) StartChunk(evt data.ChunkEvent) error {
+func (lb *LB) StartChunk(evt *data.ChunkEvent) error {
 	key, ok := lb.vodSessionMap[evt.SessionID]
 	if !ok {
 		return fmt.Errorf("not exists session %v", evt.SessionID)
@@ -94,7 +94,7 @@ func (lb *LB) StartChunk(evt data.ChunkEvent) error {
 }
 
 // EndChunk :
-func (lb *LB) EndChunk(evt data.ChunkEvent) error {
+func (lb *LB) EndChunk(evt *data.ChunkEvent) error {
 	key, ok := lb.vodSessionMap[evt.SessionID]
 	if !ok {
 		return fmt.Errorf("not exists session %v", evt.SessionID)
