@@ -94,6 +94,7 @@ type endEvent struct {
 	duration       time.Duration
 	sessionEndTime time.Time
 	bypass         bool
+	useOrigin      bool
 }
 
 func (e endEvent) String() string {
@@ -217,7 +218,8 @@ func (s *Simulator) Run() {
 			ChunkSize:   chunkSize,
 			Bypass:      bypass,
 		}
-		err = s.lb.StartChunk(&cEvt)
+		var useOrigin bool
+		useOrigin, err = s.lb.StartChunk(&cEvt)
 		if err != nil {
 			log.Fatalf("failed to process start-chunk-event, %v", err)
 		}
@@ -238,6 +240,7 @@ func (s *Simulator) Run() {
 			duration:       du,
 			sessionEndTime: ev.Ended,
 			bypass:         bypass,
+			useOrigin:      useOrigin,
 		}
 		if ecEv.time.Sub(ev.Ended) >= 0 {
 			ecEv.time = ev.Ended.Add(-time.Millisecond)
@@ -290,7 +293,7 @@ func (s *Simulator) processEventsUntil(ti time.Time, events *eventHeap, lb *lb.L
 				ChunkSize:   chunkSize,
 				Bypass:      endEv.bypass,
 			}
-			err = lb.EndChunk(&evt)
+			err = lb.EndChunk(&evt, endEv.useOrigin)
 			if err != nil {
 				log.Fatalf("failed to process end-chunk-event, %v", err)
 			}
@@ -304,7 +307,7 @@ func (s *Simulator) processEventsUntil(ti time.Time, events *eventHeap, lb *lb.L
 			}
 
 			evt.Index++
-			err = lb.StartChunk(&evt)
+			endEv.useOrigin, err = lb.StartChunk(&evt)
 			if err != nil {
 				log.Fatalf("failed to process start-chunk-event, %v", err)
 			}

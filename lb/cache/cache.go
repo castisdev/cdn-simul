@@ -2,7 +2,6 @@ package cache
 
 import (
 	"fmt"
-	"strconv"
 
 	"github.com/castisdev/cdn-simul/data"
 )
@@ -15,15 +14,13 @@ type Cache struct {
 	HitCount    int64
 	MissCount   int64
 	OriginBps   int64
-	MissChunks  map[string]struct{}
 	IsCacheFull bool
 }
 
 // NewCache :
 func NewCache(limitSize int64) (*Cache, error) {
 	m := &Cache{
-		LimitSize:  limitSize,
-		MissChunks: make(map[string]struct{}),
+		LimitSize: limitSize,
 	}
 
 	if err := m.init(); err != nil {
@@ -36,47 +33,37 @@ func filepath(evt *data.ChunkEvent) int {
 	return evt.IntFileName*10000 + int(evt.Index)
 }
 
-func chunkSession(evt *data.ChunkEvent) string {
-
-	return evt.SessionID + "-" + strconv.Itoa(filepath(evt))
-}
-
 // StartChunk :
-func (c *Cache) StartChunk(evt *data.ChunkEvent) error {
+func (c *Cache) StartChunk(evt *data.ChunkEvent) (useOrigin bool, err error) {
 	if evt.Bypass {
 		c.MissCount++
 		c.OriginBps += evt.Bps
-		return nil
+		useOrigin = false
+		return useOrigin, err
 	}
 	key := filepath(evt)
 	n, ok := c.Get(key)
 	if ok {
 		if n != evt.ChunkSize {
-			return fmt.Errorf("invalid chunk size, cached(%v) evt(%v)", n, evt.ChunkSize)
+			return false, fmt.Errorf("invalid chunk size, cached(%v) evt(%v)", n, evt.ChunkSize)
 		}
 		c.HitCount++
 	} else {
-		err := c.Add(key, evt.ChunkSize)
+		err = c.Add(key, evt.ChunkSize)
 		if err != nil {
-			return err
+			return false, err
 		}
 		c.MissCount++
 		c.OriginBps += evt.Bps
-		c.MissChunks[chunkSession(evt)] = struct{}{}
+		useOrigin = true
 	}
-	return nil
+	return useOrigin, err
 }
 
 // EndChunk :
-func (c *Cache) EndChunk(evt *data.ChunkEvent) error {
-	if evt.Bypass {
+func (c *Cache) EndChunk(evt *data.ChunkEvent, useOrigin bool) error {
+	if useOrigin {
 		c.OriginBps -= evt.Bps
-		return nil
-	}
-	k := chunkSession(evt)
-	if _, ok := c.MissChunks[k]; ok {
-		c.OriginBps -= evt.Bps
-		delete(c.MissChunks, k)
 	}
 	return nil
 }

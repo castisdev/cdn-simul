@@ -81,25 +81,25 @@ func (lb *LB) EndSession(evt *data.SessionEvent) error {
 }
 
 // StartChunk :
-func (lb *LB) StartChunk(evt *data.ChunkEvent) error {
+func (lb *LB) StartChunk(evt *data.ChunkEvent) (useOrigin bool, err error) {
 	key, ok := lb.vodSessionMap[evt.SessionID]
 	if !ok {
-		return fmt.Errorf("not exists session %v", evt.SessionID)
+		return false, fmt.Errorf("not exists session %v", evt.SessionID)
 	}
-	err := lb.Caches[key].StartChunk(evt)
+	useOrigin, err = lb.Caches[key].StartChunk(evt)
 	if err != nil {
-		return fmt.Errorf("failed to start chunk in cache, %v", err)
+		return false, fmt.Errorf("failed to start chunk in cache, %v", err)
 	}
-	return nil
+	return useOrigin, err
 }
 
 // EndChunk :
-func (lb *LB) EndChunk(evt *data.ChunkEvent) error {
+func (lb *LB) EndChunk(evt *data.ChunkEvent, useOrigin bool) error {
 	key, ok := lb.vodSessionMap[evt.SessionID]
 	if !ok {
 		return fmt.Errorf("not exists session %v", evt.SessionID)
 	}
-	err := lb.Caches[key].EndChunk(evt)
+	err := lb.Caches[key].EndChunk(evt, useOrigin)
 	if err != nil {
 		return fmt.Errorf("failed to end chunk in cache, %v", err)
 	}
