@@ -25,6 +25,11 @@ import (
 var chunkSize float64 = 2 * 1024 * 1024
 var avgBitrate int
 
+type fileInfo struct {
+	bitrate  int
+	filesize int64
+}
+
 func main() {
 	sdir := flag.String("sdir", "", "source directory")
 	sdbfn := flag.String("sdb", "sid.db", "session db")
@@ -49,9 +54,10 @@ func main() {
 	files := glblog.ListLogFiles(*sdir)
 	sort.Sort(glblog.LogFileInfoSorter(files))
 
-	fmap := make(map[string]int)
+	fmap := make(map[string]*fileInfo)
 
 	var totalBitrate int64
+	cnt := 0
 	fin, err := os.Open("files.csv")
 	if err == nil {
 		s := bufio.NewScanner(fin)
@@ -60,11 +66,18 @@ func main() {
 			strs := strings.Split(line, ",")
 			filename := strs[0]
 			bitrate, _ := strconv.Atoi(strings.TrimSpace(strs[1]))
-			fmap[filename] = bitrate
+			if bitrate != 0 {
+				cnt++
+			}
+			var filesize int64
+			if len(strs) > 2 {
+				filesize, _ = strconv.ParseInt(strings.TrimSpace(strs[2]), 10, 64)
+			}
+			fmap[filename] = &fileInfo{bitrate, filesize}
 			totalBitrate += int64(bitrate)
 		}
 	}
-	avgBitrate = int(totalBitrate / int64(len(fmap)))
+	avgBitrate = int(totalBitrate / int64(cnt))
 
 	var n int
 	if files[len(files)-1].Date.Sub(files[0].Date) > 7*24*time.Hour {
@@ -94,7 +107,7 @@ func main() {
 		}
 		wg.Add(1)
 		go func() {
-			fmapLocal := make(map[string]int)
+			fmapLocal := make(map[string]*fileInfo)
 			smap := make(map[string]*glblog.SessionInfo)
 			for i, lfi := range thisFiles {
 				doOneFile(lfi.Fpath, smap, fmapLocal, db, sdb, *assetOnly)
@@ -102,7 +115,16 @@ func main() {
 			}
 			mu.Lock()
 			for k, v := range fmapLocal {
-				fmap[k] = v
+				if _, ok := fmap[k]; ok {
+					if v.bitrate != 0 {
+						fmap[k].bitrate = v.bitrate
+					}
+					if v.filesize != 0 {
+						fmap[k].filesize = v.filesize
+					}
+				} else {
+					fmap[k] = v
+				}
 			}
 			mu.Unlock()
 			wg.Done()
@@ -115,32 +137,38 @@ func main() {
 	fout, _ := os.Create("files.csv")
 	defer fout.Close()
 	for k, v := range fmap {
-		fmt.Fprintf(fout, "%s, %d\n", k, v)
+		fmt.Fprintf(fout, "%s, %d, %d\n", k, v.bitrate, v.filesize)
 	}
 
-	sout, _ := os.Create("sessions.csv")
-	defer sout.Close()
-	iter := db.NewIterator(nil, nil)
-	for iter.Next() {
-		reader := bytes.NewReader(iter.Value())
-		dec := gob.NewDecoder(reader)
-		var si glblog.SessionInfo
-		err := dec.Decode(&si)
-		if err != nil {
-			log.Fatal(err)
+	if *assetOnly == false {
+		sout, _ := os.Create("sessions.csv")
+		defer sout.Close()
+		iter := db.NewIterator(nil, nil)
+		for iter.Next() {
+			reader := bytes.NewReader(iter.Value())
+			dec := gob.NewDecoder(reader)
+			var si glblog.SessionInfo
+			err := dec.Decode(&si)
+			if err != nil {
+				log.Fatal(err)
+			}
+			fmt.Fprintln(sout, si)
 		}
-		fmt.Fprintln(sout, si)
 	}
 
 	log.Println("bye")
 }
 
-func calcAvgBitrate(fmap map[string]int) int {
+func calcAvgBitrate(fmap map[string]*fileInfo) int {
 	var totalBitrate int64
+	cnt := 0
 	for _, b := range fmap {
-		totalBitrate += int64(b)
+		if b.bitrate != 0 {
+			cnt++
+			totalBitrate += int64(b.bitrate)
+		}
 	}
-	return int(totalBitrate / int64(len(fmap)))
+	return int(totalBitrate / int64(cnt))
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -150,7 +178,7 @@ var dateLayout = "2006-01-02"
 
 var mu sync.Mutex
 
-func doOneFile(fpath string, smap map[string]*glblog.SessionInfo, fmap map[string]int, db, sdb *leveldb.DB, assetOnly bool) {
+func doOneFile(fpath string, smap map[string]*glblog.SessionInfo, fmap map[string]*fileInfo, db, sdb *leveldb.DB, assetOnly bool) {
 	f, err := os.Open(fpath)
 	if err != nil {
 		log.Println(err)
@@ -200,21 +228,12 @@ func doOneFile(fpath string, smap map[string]*glblog.SessionInfo, fmap map[strin
 					log.Println(err, "invalid log line, ", logLine)
 					continue
 				}
-				if si.Bandwidth != 0 {
-					fmap[si.Filename] = si.Bandwidth
-				}
-			} else if bw, ok := fmap[si.Filename]; ok {
-				si.Bandwidth = bw
-			} else if avgBitrate != 0 {
-				si.Bandwidth = avgBitrate
-			} else {
-				si.Bandwidth = calcAvgBitrate(fmap)
 			}
 
 			if assetOnly == false {
 				smap[si.SID] = si
 			}
-		} else if strings.Contains(line, "OnTeardownNotification") && assetOnly == false {
+		} else if strings.Contains(line, "OnTeardownNotification") {
 			strs := strings.SplitN(line, ",", 8)
 			strEnded := strs[2] + " " + strs[3]
 
@@ -256,13 +275,43 @@ func doOneFile(fpath string, smap map[string]*glblog.SessionInfo, fmap map[strin
 						}
 					}
 
-					var buf bytes.Buffer
-					enc := gob.NewEncoder(&buf)
-					err = enc.Encode(si)
-					if err != nil {
-						log.Fatal(err)
+					if fi, ok := fmap[si.Filename]; ok {
+						if si.Filesize == 0 && fi.filesize != 0 {
+							si.Filesize = fi.filesize
+						}
+						if si.Bandwidth == 0 && fi.bitrate != 0 {
+							si.Bandwidth = fi.bitrate
+						}
 					}
-					batch.Put([]byte(si.Started.Format(layout)+si.SID), buf.Bytes())
+
+					if len(logs) > 0 {
+						if si.Filesize == 0 && logs[0].Filesize != 0 {
+							si.Filesize = logs[0].Filesize
+						}
+						if si.Bandwidth == 0 && logs[0].Bitrate != 0 {
+							si.Bandwidth = logs[0].Bitrate
+						}
+					}
+
+					fmap[si.Filename] = &fileInfo{si.Bandwidth, si.Filesize}
+
+					if si.Bandwidth == 0 {
+						if avgBitrate != 0 {
+							si.Bandwidth = avgBitrate
+						} else {
+							si.Bandwidth = calcAvgBitrate(fmap)
+						}
+					}
+
+					if assetOnly == false {
+						var buf bytes.Buffer
+						enc := gob.NewEncoder(&buf)
+						err = enc.Encode(si)
+						if err != nil {
+							log.Fatal(err)
+						}
+						batch.Put([]byte(si.Started.Format(layout)+si.SID), buf.Bytes())
+					}
 				}
 
 				// {

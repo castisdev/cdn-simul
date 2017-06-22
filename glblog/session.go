@@ -13,8 +13,9 @@ type SessionInfo struct {
 	Filename  string
 	Bandwidth int
 	Offset    int64
+	Filesize  int64
 }
 
 func (s SessionInfo) String() string {
-	return fmt.Sprintf("%s, %s, %s, %s, %d, %d", s.Started.Format(layout), s.SID, s.Ended.Format(layout), s.Filename, s.Bandwidth, s.Offset)
+	return fmt.Sprintf("%s, %s, %s, %s, %d, %d, %d", s.Started.Format(layout), s.SID, s.Ended.Format(layout), s.Filename, s.Bandwidth, s.Offset, s.Filesize)
 }
