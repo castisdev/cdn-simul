@@ -22,6 +22,7 @@ type Options struct {
 	InfluxDBPass      string
 	StatusWritePeriod time.Duration
 	BypassFile        string
+	FirstBypass       bool
 }
 
 var layout = "2006-01-02 15:04:05.000"
@@ -102,6 +103,40 @@ func (e endEvent) String() string {
 		e.endType, e.time.Format(layout), e.sid, e.filename, e.bps, e.index, e.duration, e.sessionEndTime.Format(layout), e.bypass)
 }
 
+type firstBypassChecker struct {
+	firstHitFile    map[int]struct{}
+	moreHitFile     map[int]struct{}
+	updatedHitFileT time.Time
+	updateHitPeriod time.Duration
+}
+
+func (s *firstBypassChecker) updateHitFile(file int, t time.Time) {
+	if s.updatedHitFileT.IsZero() {
+		s.updatedHitFileT = t
+	} else if t.Sub(s.updatedHitFileT) >= s.updateHitPeriod {
+		for k := range s.firstHitFile {
+			delete(s.firstHitFile, k)
+		}
+		for k := range s.moreHitFile {
+			delete(s.moreHitFile, k)
+		}
+	}
+	_, firstOk := s.firstHitFile[file]
+	_, moreOk := s.moreHitFile[file]
+	var empty struct{}
+	if !firstOk && !moreOk {
+		s.firstHitFile[file] = empty
+	} else if firstOk {
+		delete(s.firstHitFile, file)
+		s.moreHitFile[file] = empty
+	}
+}
+
+func (s *firstBypassChecker) isBypass(file int) bool {
+	_, ok := s.firstHitFile[file]
+	return ok
+}
+
 // Simulator :
 type Simulator struct {
 	cfg            data.Config
@@ -113,6 +148,7 @@ type Simulator struct {
 	bypassMap      map[string]interface{}
 	filenameMap    map[string]int
 	filenameSeed   int
+	firstBypass    *firstBypassChecker
 }
 
 // NewSimulator :
@@ -134,6 +170,11 @@ func NewSimulator(cfg data.Config, opt Options, s lb.VODSelector, r EventReader,
 		internalEvents: ie,
 		bypassMap:      make(map[string]interface{}),
 		filenameMap:    make(map[string]int),
+		firstBypass: &firstBypassChecker{
+			firstHitFile:    make(map[int]struct{}),
+			moreHitFile:     make(map[int]struct{}),
+			updateHitPeriod: 24 * time.Hour,
+		},
 	}
 	for _, v := range bypass {
 		si.bypassMap[v] = nil
@@ -178,6 +219,10 @@ func (s *Simulator) Run() {
 		}
 
 		fn := s.getFilename(ev.Filename)
+		if s.opt.FirstBypass {
+			s.firstBypass.updateHitFile(fn, procT)
+		}
+
 		var err error
 		sEvt := data.SessionEvent{
 			Time:      ev.Started,
@@ -208,6 +253,9 @@ func (s *Simulator) Run() {
 		idx := int(ev.Offset / chunkSize)
 		du := time.Duration(float64(8*chunkSize)/float64(ev.Bandwidth)*1000) * time.Millisecond
 		_, bypass := s.bypassMap[ev.Filename]
+		if s.opt.FirstBypass {
+			bypass = bypass || s.firstBypass.isBypass(fn)
+		}
 		cEvt := data.ChunkEvent{
 			Time:        ev.Started,
 			SessionID:   ev.SID,
@@ -270,10 +318,6 @@ func (s *Simulator) processEventsUntil(ti time.Time, events *eventHeap, lb *lb.L
 	for events.Len() > 0 {
 		e := heap.Pop(events)
 		endEv := e.(*endEvent)
-
-		if s.opt.StatusWritePeriod == 0 {
-			log.Printf("%s\n", endEv)
-		}
 
 		if endEv.time.After(ti) {
 			heap.Push(events, endEv)

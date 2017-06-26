@@ -35,12 +35,6 @@ func filepath(evt *data.ChunkEvent) int {
 
 // StartChunk :
 func (c *Cache) StartChunk(evt *data.ChunkEvent) (useOrigin bool, err error) {
-	if evt.Bypass {
-		c.MissCount++
-		c.OriginBps += evt.Bps
-		useOrigin = false
-		return useOrigin, err
-	}
 	key := filepath(evt)
 	n, ok := c.Get(key)
 	if ok {
@@ -49,9 +43,11 @@ func (c *Cache) StartChunk(evt *data.ChunkEvent) (useOrigin bool, err error) {
 		}
 		c.HitCount++
 	} else {
-		err = c.Add(key, evt.ChunkSize)
-		if err != nil {
-			return false, err
+		if evt.Bypass == false {
+			err = c.Add(key, evt.ChunkSize)
+			if err != nil {
+				return false, err
+			}
 		}
 		c.MissCount++
 		c.OriginBps += evt.Bps

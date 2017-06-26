@@ -129,3 +129,53 @@ func TestSimulator_Run_Bypass(t *testing.T) {
 
 	si.Run()
 }
+
+func TestSimulator_Run_FirstBypass(t *testing.T) {
+	limitBps := int64(1000 * 1000 * 100)
+	cfg := data.Config{
+		VODs: []data.VODConfig{
+			data.VODConfig{VodID: "vod1", StorageSize: 1000000000, LimitSession: 10, LimitBps: limitBps},
+		},
+	}
+	ss := []*glblog.SessionInfo{
+		&glblog.SessionInfo{
+			SID:       "sess-A",
+			Started:   StrToTime("2017-04-29 08:16:37.499"),
+			Ended:     StrToTime("2017-04-29 08:16:39.015"),
+			Filename:  "a.mpg",
+			Bandwidth: 10000000,
+			Offset:    0,
+		},
+		&glblog.SessionInfo{
+			SID:       "sess-B",
+			Started:   StrToTime("2017-04-29 08:16:38.012"),
+			Ended:     StrToTime("2017-04-29 08:16:40.096"),
+			Filename:  "a.mpg",
+			Bandwidth: 10000000,
+			Offset:    0,
+		},
+		&glblog.SessionInfo{
+			SID:       "sess-C",
+			Started:   StrToTime("2017-04-29 08:16:39.012"),
+			Ended:     StrToTime("2017-04-29 08:16:41.096"),
+			Filename:  "a.mpg",
+			Bandwidth: 10000000,
+			Offset:    0,
+		},
+		&glblog.SessionInfo{
+			SID:       "sess-D",
+			Started:   StrToTime("2017-04-30 08:16:38.012"),
+			Ended:     StrToTime("2017-04-30 08:16:40.096"),
+			Filename:  "a.mpg",
+			Bandwidth: 10000000,
+			Offset:    0,
+		},
+	}
+	si := NewSimulator(cfg, Options{FirstBypass: true}, &lb.SameWeightDup2{}, NewTestEventReader(ss), &StdStatusWriter{}, nil)
+	if si == nil {
+		t.Errorf("failed to create simulator instance")
+		return
+	}
+
+	si.Run()
+}
