@@ -35,6 +35,7 @@ func NewVODSelector(algorithm string, hotListUpdatePeriod time.Duration, hotRank
 func main() {
 	var cfgFile, dbFile, cpuprofile, memprofile, lp, dbAddr, dbName, lb, hotListUpdatePeriod, bypass string
 	var readEventCount, hotRankLimit int
+	var firstBypass bool
 
 	flag.StringVar(&cfgFile, "cfg", "cdn-simul.json", "config file")
 	flag.StringVar(&dbFile, "db", "chunk.db", "event db")
@@ -48,6 +49,7 @@ func main() {
 	flag.StringVar(&hotListUpdatePeriod, "hot-period", "24h", "hot list update period (high-low)")
 	flag.IntVar(&hotRankLimit, "hot-rank", 100, "rank limit of hot list, that contents will be served in high group (high-low)")
 	flag.StringVar(&bypass, "bypass", "", "text file that has contents list to bypass")
+	flag.BoolVar(&firstBypass, "first-bypass", false, "if true, chunks of first hit session for 24h will be bypassed")
 
 	flag.Parse()
 
@@ -62,6 +64,7 @@ func main() {
 		InfluxDBName:      dbName,
 		StatusWritePeriod: logPeriod,
 		BypassFile:        bypass,
+		FirstBypass:       firstBypass,
 	}
 
 	if cpuprofile != "" {
