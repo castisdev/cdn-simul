@@ -14,8 +14,9 @@ type SessionInfo struct {
 	Bandwidth int
 	Offset    int64
 	Filesize  int64
+	IsCenter  bool
 }
 
 func (s SessionInfo) String() string {
-	return fmt.Sprintf("%s, %s, %s, %s, %d, %d, %d", s.Started.Format(layout), s.SID, s.Ended.Format(layout), s.Filename, s.Bandwidth, s.Offset, s.Filesize)
+	return fmt.Sprintf("%s, %s, %s, %s, %d, %d, %d, %v", s.Started.Format(layout), s.SID, s.Ended.Format(layout), s.Filename, s.Bandwidth, s.Offset, s.Filesize, s.IsCenter)
 }

@@ -65,11 +65,20 @@ func doOneFile(lfi glblog.LogFileInfo, odir string, isCenter bool, sidMap map[st
 
 		if strings.Contains(line, "Successfully New Setup Session") == false &&
 			strings.Contains(line, "Successfully New SemiSetup Session") == false &&
-			strings.Contains(line, "OnTeardownNotification") == false {
+			strings.Contains(line, "OnTeardownNotification") == false &&
+			strings.Contains(line, "result is file not found") == false {
+			continue
+		}
+
+		if strings.Contains(line, "OnDescribeResponse") {
 			continue
 		}
 
 		if isCenter {
+			if strings.Contains(line, "result is file not found") {
+				continue
+			}
+
 			if strings.Contains(line, "Successfully New Setup Session") ||
 				strings.Contains(line, "Successfully New SemiSetup Session") {
 				strs := strings.SplitN(line, ",", 8)

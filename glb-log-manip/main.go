@@ -9,7 +9,6 @@ import (
 	"log"
 	"math"
 	"os"
-	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -18,7 +17,6 @@ import (
 
 	"github.com/castisdev/cdn-simul/glblog"
 	"github.com/castisdev/cdn-simul/vodlog"
-	humanize "github.com/dustin/go-humanize"
 	"github.com/syndtr/goleveldb/leveldb"
 )
 
@@ -79,59 +77,14 @@ func main() {
 	}
 	avgBitrate = int(totalBitrate / int64(cnt))
 
-	var n int
-	if files[len(files)-1].Date.Sub(files[0].Date) > 7*24*time.Hour {
-		n = 1 //runtime.GOMAXPROCS(0) + 2
-	} else {
-		n = 1
-	}
-	size := (len(files) + n - 1) / n
-	var wg sync.WaitGroup
-	for i := 0; i < n; i++ {
-		begin, end := i*size, (i+1)*size
-		if end > len(files) {
-			end = len(files)
-		}
-		thisFiles := make([]glblog.LogFileInfo, end-begin)
-		copy(thisFiles, files[begin:end])
-		thisDate := thisFiles[len(thisFiles)-1].Date
-		if i != n-1 {
-			nextDate := thisDate.Add(time.Hour * 24)
-			for j := end; true; j++ {
-				if files[j].Date.Equal(thisDate) || files[j].Date.Equal(nextDate) {
-					thisFiles = append(thisFiles, files[j])
-				} else {
-					break
-				}
-			}
-		}
-		wg.Add(1)
-		go func() {
-			fmapLocal := make(map[string]*fileInfo)
-			smap := make(map[string]*glblog.SessionInfo)
-			for i, lfi := range thisFiles {
-				doOneFile(lfi.Fpath, smap, fmapLocal, db, sdb, *assetOnly)
-				log.Printf("done with %s, %d/%d\n", filepath.Base(lfi.Fpath), i+1, len(thisFiles))
-			}
-			mu.Lock()
-			for k, v := range fmapLocal {
-				if _, ok := fmap[k]; ok {
-					if v.bitrate != 0 {
-						fmap[k].bitrate = v.bitrate
-					}
-					if v.filesize != 0 {
-						fmap[k].filesize = v.filesize
-					}
-				} else {
-					fmap[k] = v
-				}
-			}
-			mu.Unlock()
-			wg.Done()
-		}()
+	smap := make(map[string]*glblog.SessionInfo)
+	gmap := make(map[string]struct{})
+
+	for i, lfi := range files {
+		doOneFile(lfi.Fpath, smap, fmap, gmap, db, sdb, *assetOnly)
+		log.Printf("done with %s, %d/%d\n", lfi.Fpath, i+1, len(files))
 	}
 
-	wg.Wait()
 	log.Println("all events was writed")
 
 	fout, _ := os.Create("files.csv")
@@ -178,7 +131,8 @@ var dateLayout = "2006-01-02"
 
 var mu sync.Mutex
 
-func doOneFile(fpath string, smap map[string]*glblog.SessionInfo, fmap map[string]*fileInfo, db, sdb *leveldb.DB, assetOnly bool) {
+func doOneFile(fpath string, smap map[string]*glblog.SessionInfo, fmap map[string]*fileInfo,
+	gmap map[string]struct{}, db, sdb *leveldb.DB, assetOnly bool) {
 	f, err := os.Open(fpath)
 	if err != nil {
 		log.Println(err)
@@ -189,17 +143,35 @@ func doOneFile(fpath string, smap map[string]*glblog.SessionInfo, fmap map[strin
 	loc, _ := time.LoadLocation("Local")
 	batch := new(leveldb.Batch)
 
+	isCenter := strings.Contains(fpath, "center")
+
+	sepFunc := func(c rune) bool {
+		return c == '[' || c == ']' || c == ',' || c == ' ' || c == ':'
+	}
+
 	s := bufio.NewScanner(f)
-	cnt := 0
-	// totalCnt := 0
-	var lastEvent *glblog.Event
 	for s.Scan() {
 		line := s.Text()
 		if strings.Contains(line, "cueTone") {
 			continue
 		}
 
-		if strings.Contains(line, "Successfully New Setup Session") ||
+		if strings.Contains(line, "result is file not found") {
+			strs := strings.SplitN(line, ",", 8)
+			logLine := strings.Trim(strs[7], `"`)
+			if strings.Contains(line, "OnRetrieveBandwidthResponse") {
+				// OnRetrieveBandwidthResponse : 64564ebb-abcb-4419-9e4e-1f13172139e8, 1e33290a-846b-4e48-98fd-1d6dfd46c4dd, 0, MZ4H200KSGL1500002_K20170331105440.mpg, 0, result is file not found, LB[125.147.128.5, 125.147.128.5], ClientIP[100.66.14.89]
+				strs2 := strings.FieldsFunc(logLine, sepFunc)
+				sid := strs2[2]
+				gmap[sid] = struct{}{}
+			} else if strings.Contains(line, "OnDescribeSemiSetupResponse") {
+				// OnDescribeSemiSetupResponse, LB[125.147.128.5, 125.147.128.5], StreamID[2e4ce625-ce3d-40cd-a9a8-679e929ab19d], UUSessionID[29da86f8-c09c-4ef6-a7fc-fd0cd6b7bd2e], ClientIP[100.66.55.48], AssetID[M33H306XSGL1500001_K20170403205934.mpg], bandwidth[0], ServerID[], result[result is file not found]
+				idx := strings.Index(logLine, "UUSessionID")
+				strs2 := strings.FieldsFunc(logLine[idx:], sepFunc)
+				sid := strs2[1]
+				gmap[sid] = struct{}{}
+			}
+		} else if strings.Contains(line, "Successfully New Setup Session") ||
 			strings.Contains(line, "Successfully New SemiSetup Session") {
 			strs := strings.SplitN(line, ",", 8)
 			si := &glblog.SessionInfo{}
@@ -207,10 +179,6 @@ func doOneFile(fpath string, smap map[string]*glblog.SessionInfo, fmap map[strin
 			si.Started, _ = time.ParseInLocation(layout, strStarted, loc)
 
 			logLine := strings.Trim(strs[7], `"`)
-
-			sepFunc := func(c rune) bool {
-				return c == '[' || c == ']' || c == ',' || c == ' '
-			}
 
 			idx := strings.Index(logLine, "SessionId")
 			strs2 := strings.FieldsFunc(logLine[idx:], sepFunc)
@@ -230,9 +198,12 @@ func doOneFile(fpath string, smap map[string]*glblog.SessionInfo, fmap map[strin
 				}
 			}
 
-			if assetOnly == false {
-				smap[si.SID] = si
+			if isCenter {
+				si.IsCenter = true
+			} else if _, ok := gmap[si.SID]; ok {
+				si.IsCenter = true
 			}
+			smap[si.SID] = si
 		} else if strings.Contains(line, "OnTeardownNotification") {
 			strs := strings.SplitN(line, ",", 8)
 			strEnded := strs[2] + " " + strs[3]
@@ -313,47 +284,7 @@ func doOneFile(fpath string, smap map[string]*glblog.SessionInfo, fmap map[strin
 						batch.Put([]byte(si.Started.Format(layout)+si.SID), buf.Bytes())
 					}
 				}
-
-				// {
-				// 	lastEvent = writeEvent(batch, si.sid, si.started, glblog.SessionCreated, si.filename, 0)
-				// 	cnt++
-				// 	totalCnt++
-				// }
-				// {
-				// 	lastEvent = writeEvent(batch, si.sid, si.ended, glblog.SessionClosed, si.filename, 0)
-				// 	cnt++
-				// 	totalCnt++
-				// }
-
-				// chunkDur := time.Duration(chunkSize / (float64(si.bandwidth) / 8) * float64(time.Second.Nanoseconds()))
-				// i := 0
-				// for t := si.started; si.ended.Sub(t) > 0; t, i = t.Add(chunkDur), i+1 {
-				// 	{
-				// 		lastEvent = writeEvent(batch, si.sid, t, glblog.ChunkCreated, si.filename, i)
-				// 		cnt++
-				// 		totalCnt++
-				// 	}
-				// 	{
-				// 		et := t.Add(chunkDur)
-				// 		if si.ended.Sub(et) < 0 {
-				// 			et = si.ended
-				// 		}
-				// 		lastEvent = writeEvent(batch, si.sid, et, glblog.ChunkClosed, si.filename, i)
-				// 		cnt++
-				// 		totalCnt++
-				// 	}
-				// }
 			}
-		}
-
-		if assetOnly == false && cnt > 1000000 {
-			err = db.Write(batch, nil)
-			if err != nil {
-				log.Fatal(err)
-			}
-			log.Printf("batched with %s, %s events, etime[%s]\n", filepath.Base(fpath), humanize.Comma(int64(cnt)), lastEvent.EventTime)
-			batch = new(leveldb.Batch)
-			cnt = 0
 		}
 	}
 
@@ -361,9 +292,6 @@ func doOneFile(fpath string, smap map[string]*glblog.SessionInfo, fmap map[strin
 		err = db.Write(batch, nil)
 		if err != nil {
 			log.Fatal(err)
-		}
-		if lastEvent != nil {
-			log.Printf("batched with %s, %s events, etime[%s]\n", filepath.Base(fpath), humanize.Comma(int64(cnt)), lastEvent.EventTime)
 		}
 	}
 
