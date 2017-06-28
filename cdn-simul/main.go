@@ -33,7 +33,7 @@ func NewVODSelector(algorithm string, hotListUpdatePeriod time.Duration, hotRank
 }
 
 func main() {
-	var cfgFile, dbFile, cpuprofile, memprofile, lp, dbAddr, dbName, lb, hotListUpdatePeriod, bypass string
+	var cfgFile, dbFile, cpuprofile, memprofile, lp, dbAddr, dbName, lb, hotListUpdatePeriod, bypass, fbPeriod string
 	var readEventCount, hotRankLimit int
 	var firstBypass bool
 
@@ -50,10 +50,15 @@ func main() {
 	flag.IntVar(&hotRankLimit, "hot-rank", 100, "rank limit of hot list, that contents will be served in high group (high-low)")
 	flag.StringVar(&bypass, "bypass", "", "text file that has contents list to bypass")
 	flag.BoolVar(&firstBypass, "first-bypass", false, "if true, chunks of first hit session for 24h will be bypassed")
+	flag.StringVar(&fbPeriod, "fb-period", "24h", "first bypass list update period (only used with first-bypass option)")
 
 	flag.Parse()
 
 	logPeriod, err := time.ParseDuration(lp)
+	if err != nil {
+		log.Fatal(err)
+	}
+	fbp, err := time.ParseDuration(fbPeriod)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -65,6 +70,7 @@ func main() {
 		StatusWritePeriod: logPeriod,
 		BypassFile:        bypass,
 		FirstBypass:       firstBypass,
+		FBPeriod:          fbp,
 	}
 
 	if cpuprofile != "" {

@@ -23,6 +23,7 @@ type Options struct {
 	StatusWritePeriod time.Duration
 	BypassFile        string
 	FirstBypass       bool
+	FBPeriod          time.Duration
 }
 
 var layout = "2006-01-02 15:04:05.000"
@@ -120,6 +121,7 @@ func (s *firstBypassChecker) updateHitFile(file int, t time.Time) {
 		for k := range s.moreHitFile {
 			delete(s.moreHitFile, k)
 		}
+		s.updatedHitFileT = t
 	}
 	_, firstOk := s.firstHitFile[file]
 	_, moreOk := s.moreHitFile[file]
@@ -173,7 +175,7 @@ func NewSimulator(cfg data.Config, opt Options, s lb.VODSelector, r EventReader,
 		firstBypass: &firstBypassChecker{
 			firstHitFile:    make(map[int]struct{}),
 			moreHitFile:     make(map[int]struct{}),
-			updateHitPeriod: 24 * time.Hour,
+			updateHitPeriod: opt.FBPeriod,
 		},
 	}
 	for _, v := range bypass {
