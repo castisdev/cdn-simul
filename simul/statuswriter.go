@@ -30,10 +30,10 @@ func (w DBStatusWriter) WriteStatus(ti time.Time, st status.Status, cfg data.Con
 	for _, v := range st.Caches {
 		vcfg := FindConfig(&cfg, v.VODKey)
 		vod := st.Vods[vod.Key(v.VODKey)]
-		str += fmt.Sprintf("cache,vod=%s hit=%d,miss=%d,originbps=%d,disk=%d,disklimit=%d %d\n",
-			v.VODKey, v.CacheHitCount, v.CacheMissCount, v.OriginBps, v.CurSize, vcfg.StorageSize, t)
-		str += fmt.Sprintf("vod,vod=%s bps=%d,bpslimit=%d,session=%d,sessionlimit=%d %d\n",
-			v.VODKey, vod.CurBps, vcfg.LimitBps, vod.CurSessionCount, vcfg.LimitSession, t)
+		str += fmt.Sprintf("cache,simul=%s,vod=%s hit=%d,miss=%d,originbps=%d,disk=%d,disklimit=%d %d\n",
+			opt.SimulID, v.VODKey, v.CacheHitCount, v.CacheMissCount, v.OriginBps, v.CurSize, vcfg.StorageSize, t)
+		str += fmt.Sprintf("vod,simul=%s,vod=%s bps=%d,bpslimit=%d,session=%d,sessionlimit=%d %d\n",
+			opt.SimulID, v.VODKey, vod.CurBps, vcfg.LimitBps, vod.CurSessionCount, vcfg.LimitSession, t)
 	}
 
 	reqBody := bytes.NewBufferString(str)
