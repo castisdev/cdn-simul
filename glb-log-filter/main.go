@@ -59,7 +59,7 @@ func doOneFile(lfi glblog.LogFileInfo, odir string, isCenter bool, sidMap map[st
 	s := bufio.NewScanner(f)
 	for s.Scan() {
 		line := s.Text()
-		if strings.Contains(line, "cueTone") {
+		if strings.Contains(line, "cueTone") || strings.Contains(line, "test1.mpg") {
 			continue
 		}
 

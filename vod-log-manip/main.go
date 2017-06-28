@@ -28,6 +28,11 @@ func main() {
 		log.Fatal(err)
 	}
 
+	err = os.RemoveAll("sid.db")
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	sdb, err := leveldb.OpenFile("sid.db", nil)
 	if err != nil {
 		log.Fatal(err)
