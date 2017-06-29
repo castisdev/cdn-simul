@@ -32,10 +32,18 @@ func NewVODSelector(algorithm string, hotListUpdatePeriod time.Duration, hotRank
 	return &lb.SameHashingWeight{}
 }
 
+// NewLoadBalancer :
+func NewLoadBalancer(cfg data.Config, s lb.VODSelector, legacyMode bool) (lb.LoadBalancer, error) {
+	if legacyMode {
+		return lb.NewLegacyLB(cfg, s)
+	}
+	return lb.New(cfg, s)
+}
+
 func main() {
 	var cfgFile, dbFile, cpuprofile, memprofile, lp, dbAddr, dbName, lb, hotListUpdatePeriod, bypass, fbPeriod, simulID string
 	var readEventCount, hotRankLimit int
-	var firstBypass bool
+	var firstBypass, legacy bool
 
 	flag.StringVar(&cfgFile, "cfg", "cdn-simul.json", "config file")
 	flag.StringVar(&dbFile, "db", "chunk.db", "event db")
@@ -52,6 +60,7 @@ func main() {
 	flag.BoolVar(&firstBypass, "first-bypass", false, "if true, chunks of first hit session for 24h will be bypassed")
 	flag.StringVar(&fbPeriod, "fb-period", "24h", "first bypass list update period (only used with first-bypass option)")
 	flag.StringVar(&simulID, "id", "cdn-simul", "simulation id, that used with tag values in influx DB")
+	flag.BoolVar(&legacy, "legacy", false, "if true, simulate with legacy mode, center session is cache miss")
 
 	flag.Parse()
 
@@ -121,7 +130,12 @@ func main() {
 	if err != nil {
 		log.Fatalf("failed to parse duration: %v", err)
 	}
-	si := simul.NewSimulator(cfg, opt, NewVODSelector(lb, du, hotRankLimit), simul.NewDBEventReader(db), writer, bypassList)
+
+	alb, err := NewLoadBalancer(cfg, NewVODSelector(lb, du, hotRankLimit), legacy)
+	if err != nil {
+		log.Fatalf("failed to create loadbalancer instance: %v", err)
+	}
+	si := simul.NewSimulator(cfg, opt, alb, simul.NewDBEventReader(db), writer, bypassList)
 
 	now := time.Now()
 	si.Run()

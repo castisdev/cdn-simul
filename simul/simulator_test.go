@@ -9,7 +9,7 @@ import (
 	"github.com/castisdev/cdn-simul/lb"
 )
 
-func TestSimulator_Run(t *testing.T) {
+func TestSimulator_Run_Simple(t *testing.T) {
 	cfg := data.Config{
 		VODs: []data.VODConfig{data.VODConfig{VodID: "vod1", StorageSize: 1000000000, LimitSession: 10000, LimitBps: 1000000000000}},
 	}
@@ -31,7 +31,13 @@ func TestSimulator_Run(t *testing.T) {
 			Offset:    376,
 		},
 	}
-	si := NewSimulator(cfg, Options{}, &lb.SameHashingWeight{}, NewTestEventReader(ss), nil, nil)
+
+	lb, err := lb.New(cfg, &lb.SameHashingWeight{})
+	if err != nil {
+		t.Errorf("failed to create loadbalancer instance")
+		return
+	}
+	si := NewSimulator(cfg, Options{}, lb, NewTestEventReader(ss), &StdStatusWriter{}, nil)
 	if si == nil {
 		t.Errorf("failed to create simulator instance")
 		return
@@ -66,7 +72,13 @@ func TestSimulator_Run_SameWeightDup2(t *testing.T) {
 			Offset:    0,
 		},
 	}
-	si := NewSimulator(cfg, Options{}, &lb.SameWeightDup2{}, NewTestEventReader(ss), nil, nil)
+
+	lb, err := lb.New(cfg, &lb.SameWeightDup2{})
+	if err != nil {
+		t.Errorf("failed to create loadbalancer instance")
+		return
+	}
+	si := NewSimulator(cfg, Options{}, lb, NewTestEventReader(ss), nil, nil)
 	if si == nil {
 		t.Errorf("failed to create simulator instance")
 		return
@@ -121,8 +133,15 @@ func TestSimulator_Run_Bypass(t *testing.T) {
 			Offset:    0,
 		},
 	}
+
+	lb, err := lb.New(cfg, &lb.SameHashingWeight{})
+	if err != nil {
+		t.Errorf("failed to create loadbalancer instance")
+		return
+	}
 	bypass := []string{"a.mpg", "b.mpg"}
-	si := NewSimulator(cfg, Options{}, &lb.SameHashingWeight{}, NewTestEventReader(ss), &StdStatusWriter{}, bypass)
+
+	si := NewSimulator(cfg, Options{}, lb, NewTestEventReader(ss), &StdStatusWriter{}, bypass)
 	if si == nil {
 		t.Errorf("failed to create simulator instance")
 		return
@@ -172,7 +191,54 @@ func TestSimulator_Run_FirstBypass(t *testing.T) {
 			Offset:    0,
 		},
 	}
-	si := NewSimulator(cfg, Options{FirstBypass: true, FBPeriod: time.Hour}, &lb.SameWeightDup2{}, NewTestEventReader(ss), &StdStatusWriter{}, nil)
+	lb, err := lb.New(cfg, &lb.SameHashingWeight{})
+	if err != nil {
+		t.Errorf("failed to create loadbalancer instance")
+		return
+	}
+	si := NewSimulator(cfg, Options{FirstBypass: true, FBPeriod: time.Hour}, lb, NewTestEventReader(ss), &StdStatusWriter{}, nil)
+	if si == nil {
+		t.Errorf("failed to create simulator instance")
+		return
+	}
+
+	si.Run()
+}
+
+func TestSimulator_Run_Legacy(t *testing.T) {
+	limitBps := int64(1000 * 1000 * 100)
+	cfg := data.Config{
+		VODs: []data.VODConfig{
+			data.VODConfig{VodID: "vod1", StorageSize: 1000000000, LimitSession: 10, LimitBps: limitBps},
+		},
+	}
+	ss := []*glblog.SessionInfo{
+		&glblog.SessionInfo{
+			SID:       "sess-A",
+			Started:   StrToTime("2017-01-01 00:00:00.000"),
+			Ended:     StrToTime("2017-01-01 00:00:01.000"),
+			Filename:  "a.mpg",
+			Bandwidth: 10000000,
+			Offset:    0,
+			IsCenter:  true,
+		},
+		&glblog.SessionInfo{
+			SID:       "sess-B",
+			Started:   StrToTime("2017-01-01 00:00:02.000"),
+			Ended:     StrToTime("2017-01-01 00:00:03.000"),
+			Filename:  "a.mpg",
+			Bandwidth: 10000000,
+			Offset:    0,
+			IsCenter:  false,
+		},
+	}
+	lb, err := lb.NewLegacyLB(cfg, &lb.SameHashingWeight{})
+	if err != nil {
+		t.Errorf("failed to create loadbalancer instance")
+		return
+	}
+
+	si := NewSimulator(cfg, Options{FirstBypass: true, FBPeriod: time.Hour}, lb, NewTestEventReader(ss), &StdStatusWriter{}, nil)
 	if si == nil {
 		t.Errorf("failed to create simulator instance")
 		return

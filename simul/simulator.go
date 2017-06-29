@@ -98,6 +98,7 @@ type endEvent struct {
 	sessionEndTime time.Time
 	bypass         bool
 	useOrigin      bool
+	isCenter       bool
 }
 
 func (e endEvent) String() string {
@@ -146,7 +147,7 @@ type Simulator struct {
 	opt            Options
 	reader         EventReader
 	writer         StatusWriter
-	lb             *lb.LB
+	lb             lb.LoadBalancer
 	internalEvents *eventHeap
 	bypassMap      map[string]interface{}
 	filenameMap    map[string]int
@@ -155,12 +156,7 @@ type Simulator struct {
 }
 
 // NewSimulator :
-func NewSimulator(cfg data.Config, opt Options, s lb.VODSelector, r EventReader, w StatusWriter, bypass []string) *Simulator {
-	lb, err := lb.New(cfg, s)
-	if err != nil {
-		log.Fatalf("failed to create lb instance, %v", err)
-	}
-
+func NewSimulator(cfg data.Config, opt Options, lb lb.LoadBalancer, r EventReader, w StatusWriter, bypass []string) *Simulator {
 	ie := &eventHeap{}
 	heap.Init(ie)
 
@@ -268,6 +264,7 @@ func (s *Simulator) Run() {
 			Index:       int64(idx),
 			ChunkSize:   chunkSize,
 			Bypass:      bypass,
+			IsCenter:    ev.IsCenter,
 		}
 		var useOrigin bool
 		useOrigin, err = s.lb.StartChunk(&cEvt)
@@ -292,6 +289,7 @@ func (s *Simulator) Run() {
 			sessionEndTime: ev.Ended,
 			bypass:         bypass,
 			useOrigin:      useOrigin,
+			isCenter:       ev.IsCenter,
 		}
 		if ecEv.time.Sub(ev.Ended) >= 0 {
 			ecEv.time = ev.Ended.Add(-time.Millisecond)
@@ -317,7 +315,7 @@ func (s *Simulator) writeStatus(ti time.Time, st status.Status, cfg data.Config,
 	}
 }
 
-func (s *Simulator) processEventsUntil(ti time.Time, events *eventHeap, lb *lb.LB) {
+func (s *Simulator) processEventsUntil(ti time.Time, events *eventHeap, lb lb.LoadBalancer) {
 	for events.Len() > 0 {
 		e := heap.Pop(events)
 		endEv := e.(*endEvent)
@@ -339,6 +337,7 @@ func (s *Simulator) processEventsUntil(ti time.Time, events *eventHeap, lb *lb.L
 				Index:       int64(endEv.index),
 				ChunkSize:   chunkSize,
 				Bypass:      endEv.bypass,
+				IsCenter:    endEv.isCenter,
 			}
 			err = lb.EndChunk(&evt, endEv.useOrigin)
 			if err != nil {

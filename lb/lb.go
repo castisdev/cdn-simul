@@ -18,8 +18,18 @@ type LB struct {
 	Selector      VODSelector
 }
 
+// LoadBalancer :
+type LoadBalancer interface {
+	StartSession(evt *data.SessionEvent) error
+	EndSession(evt *data.SessionEvent) error
+	StartChunk(evt *data.ChunkEvent) (useOrigin bool, err error)
+	EndChunk(evt *data.ChunkEvent, useOrigin bool) error
+	GetVODs() map[vod.Key]*vod.VOD
+	Status(t time.Time) *status.Status
+}
+
 // New :
-func New(cfg data.Config, selector VODSelector) (*LB, error) {
+func New(cfg data.Config, selector VODSelector) (LoadBalancer, error) {
 	l := &LB{
 		Caches:        make(map[vod.Key]*cache.Cache),
 		VODs:          make(map[vod.Key]*vod.VOD),
@@ -37,6 +47,11 @@ func New(cfg data.Config, selector VODSelector) (*LB, error) {
 
 	l.Selector.Init(cfg)
 	return l, nil
+}
+
+// GetVODs :
+func (lb *LB) GetVODs() map[vod.Key]*vod.VOD {
+	return lb.VODs
 }
 
 // SelectVOD :
