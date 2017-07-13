@@ -30,12 +30,13 @@ type VODConfig struct {
 
 // SessionEvent :
 type SessionEvent struct {
-	Time      time.Time
-	SessionID string
-	FileName  string
-	FileSize  int64
-	Bps       int64
-	Duration  time.Duration
+	Time        time.Time
+	SessionID   string
+	FileName    string
+	IntFileName int
+	FileSize    int64
+	Bps         int64
+	Duration    time.Duration
 }
 
 func (s SessionEvent) String() string {

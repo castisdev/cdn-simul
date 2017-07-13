@@ -11,39 +11,16 @@ import (
 	"time"
 
 	"github.com/castisdev/cdn-simul/data"
-	"github.com/castisdev/cdn-simul/lb"
 	"github.com/castisdev/cdn-simul/simul"
 	"github.com/castisdev/cdn/profile"
 	"github.com/syndtr/goleveldb/leveldb"
 )
 
-// NewVODSelector :
-func NewVODSelector(algorithm string, hotListUpdatePeriod time.Duration, hotRankLimit int) lb.VODSelector {
-	switch algorithm {
-	case "weight-storage-bps":
-		return &lb.WeightStorageBps{}
-	case "dup2":
-		return &lb.SameWeightDup2{}
-	case "weight-storage":
-		return &lb.WeightStorage{}
-	case "high-low":
-		return lb.NewHighLowGroup(hotListUpdatePeriod, hotRankLimit)
-	}
-	return &lb.SameHashingWeight{}
-}
-
-// NewLoadBalancer :
-func NewLoadBalancer(cfg data.Config, s lb.VODSelector, legacyMode bool) (lb.LoadBalancer, error) {
-	if legacyMode {
-		return lb.NewLegacyLB(cfg, s)
-	}
-	return lb.New(cfg, s)
-}
-
 func main() {
-	var cfgFile, dbFile, cpuprofile, memprofile, lp, dbAddr, dbName, lb, hotListUpdatePeriod, bypass, fbPeriod, simulID string
+	var cfgFile, dbFile, cpuprofile, memprofile, lp, dbAddr, dbName, lbType, hotListUpdatePeriod, bypass, fbPeriod, simulID, start string
+	var statDu, shiftP, pushP, fiFilepath, lbHistory string
 	var readEventCount, hotRankLimit int
-	var firstBypass, legacy bool
+	var firstBypass bool
 
 	flag.StringVar(&cfgFile, "cfg", "cdn-simul.json", "config file")
 	flag.StringVar(&dbFile, "db", "chunk.db", "event db")
@@ -53,14 +30,19 @@ func main() {
 	flag.StringVar(&lp, "log-period", "0s", "status logging period (second). if 0, print log after every event")
 	flag.StringVar(&dbAddr, "db-addr", "", "DB address. if empty, not use DB. ex: localhost:8086")
 	flag.StringVar(&dbName, "db-name", "cdn-simul", "database name")
-	flag.StringVar(&lb, "lb", "hash", "hash | weight-storage | weight-storage-bps | dup2 | high-low")
+	flag.StringVar(&lbType, "lb", "hash", "hash | weight-storage | weight-storage-bps | dup2 | high-low | legacy | filebase")
 	flag.StringVar(&hotListUpdatePeriod, "hot-period", "24h", "hot list update period (high-low)")
 	flag.IntVar(&hotRankLimit, "hot-rank", 100, "rank limit of hot list, that contents will be served in high group (high-low)")
+	flag.StringVar(&statDu, "stat-range", "24h", "data collect window size (filebase)")
+	flag.StringVar(&shiftP, "shift-period", "1h", "data collect window shift period (filebase)")
+	flag.StringVar(&pushP, "push-period", "5m", "file push period (filebase)")
+	flag.StringVar(&fiFilepath, "file-info", "fileinfo.csv", "csv file path contains id,name,size,bps,register-time (filebase)")
+	flag.StringVar(&lbHistory, "lb-history", "", "LB hitcount history file for initial contents (filebase)")
 	flag.StringVar(&bypass, "bypass", "", "text file that has contents list to bypass")
 	flag.BoolVar(&firstBypass, "first-bypass", false, "if true, chunks of first hit session for 24h will be bypassed")
 	flag.StringVar(&fbPeriod, "fb-period", "24h", "first bypass list update period (only used with first-bypass option)")
 	flag.StringVar(&simulID, "id", "cdn-simul", "simulation id, that used with tag values in influx DB")
-	flag.BoolVar(&legacy, "legacy", false, "if true, simulate with legacy mode, center session is cache miss")
+	flag.StringVar(&start, "start", "", "simulation start point, before that point events will be ignored, (ex)2017-01-01 00:00:00.000")
 
 	flag.Parse()
 
@@ -82,6 +64,10 @@ func main() {
 		FirstBypass:       firstBypass,
 		FBPeriod:          fbp,
 		SimulID:           simulID,
+	}
+	if start != "" {
+		t := simul.StrToTime(start)
+		opt.StartTime = t
 	}
 
 	if cpuprofile != "" {
@@ -126,16 +112,62 @@ func main() {
 		bypassList = strings.Split(string(b), "\n")
 	}
 
-	du, err := time.ParseDuration(hotListUpdatePeriod)
+	hlup, err := time.ParseDuration(hotListUpdatePeriod)
 	if err != nil {
-		log.Fatalf("failed to parse duration: %v", err)
+		log.Fatal(err)
+	}
+	sd, err := time.ParseDuration(statDu)
+	if err != nil {
+		log.Fatal(err)
+	}
+	sp, err := time.ParseDuration(shiftP)
+	if err != nil {
+		log.Fatal(err)
+	}
+	pp, err := time.ParseDuration(pushP)
+	if err != nil {
+		log.Fatal(err)
+	}
+	var fi *data.FileInfos
+	if lbType == "filebase" {
+		fiFile, err := os.Open(fiFilepath)
+		if err != nil {
+			log.Fatal(err)
+		}
+		defer fiFile.Close()
+		fi, err = data.NewFileInfos(fiFile)
+		if err != nil {
+			log.Fatal(err)
+		}
+	} else {
+		fi, err = data.NewEmptyFileInfos()
+		if err != nil {
+			log.Fatal(err)
+		}
 	}
 
-	alb, err := NewLoadBalancer(cfg, NewVODSelector(lb, du, hotRankLimit), legacy)
+	lbOpt := simul.LBOption{
+		Cfg:                 cfg,
+		LBType:              lbType,
+		HotListUpdatePeriod: hlup,
+		HotRankLimit:        hotRankLimit,
+		StatDuration:        sd,
+		ShiftPeriod:         sp,
+		PushPeriod:          pp,
+		Fileinfos:           fi,
+	}
+	if lbHistory != "" {
+		initList, err := data.LoadFromLBHistory(lbHistory)
+		if err != nil {
+			log.Fatal(err)
+		}
+		lbOpt.InitContents = initList
+	}
+	alb, err := simul.NewLoadBalancer(lbOpt)
 	if err != nil {
 		log.Fatalf("failed to create loadbalancer instance: %v", err)
 	}
-	si := simul.NewSimulator(cfg, opt, alb, simul.NewDBEventReader(db), writer, bypassList)
+	si := simul.NewSimulator(cfg, opt, alb, simul.NewDBEventReader(db), writer, fi, bypassList)
 
 	now := time.Now()
 	si.Run()

@@ -30,6 +30,7 @@ type LoadBalancer interface {
 
 // New :
 func New(cfg data.Config, selector VODSelector) (LoadBalancer, error) {
+	fmt.Println("LB created")
 	l := &LB{
 		Caches:        make(map[vod.Key]*cache.Cache),
 		VODs:          make(map[vod.Key]*vod.VOD),

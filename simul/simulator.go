@@ -25,6 +25,7 @@ type Options struct {
 	FirstBypass       bool
 	FBPeriod          time.Duration
 	SimulID           string
+	StartTime         time.Time
 }
 
 var layout = "2006-01-02 15:04:05.000"
@@ -153,10 +154,12 @@ type Simulator struct {
 	filenameMap    map[string]int
 	filenameSeed   int
 	firstBypass    *firstBypassChecker
+	fileInfos      *data.FileInfos
+	startT         time.Time
 }
 
 // NewSimulator :
-func NewSimulator(cfg data.Config, opt Options, lb lb.LoadBalancer, r EventReader, w StatusWriter, bypass []string) *Simulator {
+func NewSimulator(cfg data.Config, opt Options, lb lb.LoadBalancer, r EventReader, w StatusWriter, fi *data.FileInfos, bypass []string) *Simulator {
 	ie := &eventHeap{}
 	heap.Init(ie)
 
@@ -174,14 +177,24 @@ func NewSimulator(cfg data.Config, opt Options, lb lb.LoadBalancer, r EventReade
 			moreHitFile:     make(map[int]struct{}),
 			updateHitPeriod: opt.FBPeriod,
 		},
+		fileInfos: fi,
+		startT:    opt.StartTime,
 	}
 	for _, v := range bypass {
 		si.bypassMap[v] = nil
+	}
+
+	if si.startT.IsZero() == false {
+		fmt.Printf("events (started time < %v) will be ignored\n", TimeToStr(si.startT))
 	}
 	return si
 }
 
 func (s *Simulator) getFilename(filename string) int {
+	if s.fileInfos != nil {
+		return s.fileInfos.IntName(filename)
+	}
+
 	if value, ok := s.filenameMap[filename]; ok {
 		return value
 	}
@@ -209,6 +222,17 @@ func (s *Simulator) Run() {
 		if evtCount == 1 {
 			nextLogT = ev.Started
 		}
+		if s.fileInfos.Exists(ev.Filename) == false {
+			sz := ev.Filesize
+			if sz == 0 {
+				sz = 2 * 1024 * 1024 * 1024
+			}
+			s.fileInfos.AddOne(ev.Filename, sz, StrToTime("2017-01-01 00:00:00.000"))
+		}
+
+		if s.startT.IsZero() == false && s.startT.After(ev.Started) {
+			continue
+		}
 		procT = ev.Started
 
 		s.processEventsUntil(procT, s.internalEvents, s.lb)
@@ -224,11 +248,13 @@ func (s *Simulator) Run() {
 
 		var err error
 		sEvt := data.SessionEvent{
-			Time:      ev.Started,
-			SessionID: ev.SID,
-			FileName:  ev.Filename,
-			Bps:       int64(ev.Bandwidth),
-			Duration:  ev.Ended.Sub(ev.Started),
+			Time:        ev.Started,
+			SessionID:   ev.SID,
+			FileName:    ev.Filename,
+			IntFileName: fn,
+			FileSize:    ev.Filesize,
+			Bps:         int64(ev.Bandwidth),
+			Duration:    ev.Ended.Sub(ev.Started),
 		}
 		err = s.lb.StartSession(&sEvt)
 		if err != nil {
@@ -260,6 +286,7 @@ func (s *Simulator) Run() {
 			SessionID:   ev.SID,
 			FileName:    ev.Filename,
 			IntFileName: fn,
+			FileSize:    ev.Filesize,
 			Bps:         int64(ev.Bandwidth),
 			Index:       int64(idx),
 			ChunkSize:   chunkSize,
@@ -373,10 +400,11 @@ func (s *Simulator) processEventsUntil(ti time.Time, events *eventHeap, lb lb.Lo
 			heap.Push(events, endEv)
 		} else {
 			evt := data.SessionEvent{
-				Time:      endEv.time,
-				SessionID: endEv.sid,
-				FileName:  endEv.filename,
-				Bps:       int64(endEv.bps),
+				Time:        endEv.time,
+				SessionID:   endEv.sid,
+				FileName:    endEv.filename,
+				IntFileName: endEv.intFilename,
+				Bps:         int64(endEv.bps),
 			}
 			err = lb.EndSession(&evt)
 			if err != nil {
@@ -389,4 +417,45 @@ func (s *Simulator) processEventsUntil(ti time.Time, events *eventHeap, lb lb.Lo
 			}
 		}
 	}
+}
+
+// LBOption :
+type LBOption struct {
+	Cfg                 data.Config
+	LBType              string
+	HotListUpdatePeriod time.Duration
+	HotRankLimit        int
+	StatDuration        time.Duration
+	ShiftPeriod         time.Duration
+	PushPeriod          time.Duration
+	Fileinfos           *data.FileInfos
+	InitContents        []string
+}
+
+// NewLoadBalancer :
+func NewLoadBalancer(opt LBOption) (lb.LoadBalancer, error) {
+	switch opt.LBType {
+	case "legacy":
+		return lb.NewLegacyLB(opt.Cfg, &lb.SameHashingWeight{})
+	case "filebase":
+		st := lb.NewStorage(opt.StatDuration, opt.ShiftPeriod, opt.PushPeriod, opt.Cfg.VODs[0].StorageSize, opt.Fileinfos, opt.InitContents)
+		return lb.NewFilebaseLB(opt.Cfg, lb.NewFileBase(st))
+	}
+	s := NewVODSelector(opt.LBType, opt.HotListUpdatePeriod, opt.HotRankLimit)
+	return lb.New(opt.Cfg, s)
+}
+
+// NewVODSelector :
+func NewVODSelector(algorithm string, hotListUpdatePeriod time.Duration, hotRankLimit int) lb.VODSelector {
+	switch algorithm {
+	case "weight-storage-bps":
+		return &lb.WeightStorageBps{}
+	case "dup2":
+		return &lb.SameWeightDup2{}
+	case "weight-storage":
+		return &lb.WeightStorage{}
+	case "high-low":
+		return lb.NewHighLowGroup(hotListUpdatePeriod, hotRankLimit)
+	}
+	return &lb.SameHashingWeight{}
 }

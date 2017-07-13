@@ -1,6 +1,7 @@
 package lb
 
 import (
+	"errors"
 	"fmt"
 	"log"
 	"math"
@@ -11,6 +12,9 @@ import (
 	"github.com/castisdev/cdn-simul/lb/vod"
 	"github.com/castisdev/cdn/consistenthash"
 )
+
+// ErrFileNotFound :
+var ErrFileNotFound = errors.New("file not found")
 
 // VODSelector :
 type VODSelector interface {
@@ -122,7 +126,7 @@ func (s *SameWeightDup2) VODSelect(evt *data.SessionEvent, lb LoadBalancer) (vod
 type HighLowGroup struct {
 	WeightStorage
 	highHash        *consistenthash.Map
-	contentHits     map[string]int64
+	contentHits     map[int]int64
 	updatedHotListT time.Time
 	updateHotPeriod time.Duration
 	hotList         []contentHit
@@ -132,7 +136,7 @@ type HighLowGroup struct {
 // NewHighLowGroup :
 func NewHighLowGroup(updateHotPeriod time.Duration, hotRankThreshold int) VODSelector {
 	return &HighLowGroup{
-		contentHits:     make(map[string]int64),
+		contentHits:     make(map[int]int64),
 		updateHotPeriod: updateHotPeriod,
 		hotThreshold:    hotRankThreshold,
 	}
@@ -180,13 +184,13 @@ func (s *HighLowGroup) VODSelect(evt *data.SessionEvent, lb LoadBalancer) (vod.K
 	}
 	// file bitrate는 100k보다 크다고 가정
 	hitWeight := int64(evt.Duration.Seconds()) * int64(evt.Bps/100000)
-	if v, ok := s.contentHits[evt.FileName]; ok {
-		s.contentHits[evt.FileName] = v + hitWeight
+	if v, ok := s.contentHits[evt.IntFileName]; ok {
+		s.contentHits[evt.IntFileName] = v + hitWeight
 	} else {
-		s.contentHits[evt.FileName] = hitWeight
+		s.contentHits[evt.IntFileName] = hitWeight
 	}
 
-	if s.isHot(evt.FileName) {
+	if s.isHot(evt.IntFileName) {
 		vodKeys := s.highHash.GetItems(evt.FileName)
 		k, err := SelectAvailableFirst(evt, lb, vodKeys)
 		if err != nil {
@@ -200,12 +204,14 @@ func (s *HighLowGroup) VODSelect(evt *data.SessionEvent, lb LoadBalancer) (vod.K
 }
 
 type contentHit struct {
-	filename string
+	filename int
 	hit      int64
+	filesize int64
+	regT     time.Time
 }
 
 func (c contentHit) String() string {
-	return fmt.Sprintf("%v %v", c.filename, c.hit)
+	return fmt.Sprintf("%v %v %v %v", c.filename, c.hit, c.filesize, c.regT)
 }
 
 type contentHitSorter []contentHit
@@ -239,7 +245,7 @@ func (s *HighLowGroup) updateHotList() {
 	}
 }
 
-func (s *HighLowGroup) isHot(file string) bool {
+func (s *HighLowGroup) isHot(file int) bool {
 	for i, v := range s.hotList {
 		if v.filename == file {
 			return true
@@ -249,4 +255,36 @@ func (s *HighLowGroup) isHot(file string) bool {
 		}
 	}
 	return false
+}
+
+// FileBase :
+type FileBase struct {
+	vodID   string
+	storage *Storage
+}
+
+// NewFileBase :
+func NewFileBase(s *Storage) VODSelector {
+	return &FileBase{storage: s}
+}
+
+// Init :
+func (s *FileBase) Init(cfg data.Config) error {
+	fmt.Printf("filebase: storage:%v\n", s.storage.limitSize)
+	for _, v := range cfg.VODs {
+		s.vodID = v.VodID
+		break
+	}
+	return nil
+}
+
+// VODSelect :
+func (s *FileBase) VODSelect(evt *data.SessionEvent, lb LoadBalancer) (vod.Key, error) {
+	if err := s.storage.Update(evt); err != nil {
+		return "", err
+	}
+	if s.storage.Exists(evt.IntFileName) {
+		return vod.Key(s.vodID), nil
+	}
+	return "", ErrFileNotFound
 }

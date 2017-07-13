@@ -9,21 +9,23 @@ import (
 	"github.com/castisdev/cdn-simul/status"
 )
 
-// LegacyLB :
-type LegacyLB struct {
+// FilebaseLB :
+type FilebaseLB struct {
 	VODs          map[vod.Key]*vod.VOD
 	vodSessionMap map[string]vod.Key
+	selector      VODSelector
 	HitCount      int64
 	MissCount     int64
 	OriginBps     int64
 }
 
-// NewLegacyLB :
-func NewLegacyLB(cfg data.Config, selector VODSelector) (LoadBalancer, error) {
-	fmt.Println("LegacyLB created")
-	l := &LegacyLB{
+// NewFilebaseLB :
+func NewFilebaseLB(cfg data.Config, selector VODSelector) (LoadBalancer, error) {
+	fmt.Println("FilebaseLB created")
+	l := &FilebaseLB{
 		VODs:          make(map[vod.Key]*vod.VOD),
 		vodSessionMap: make(map[string]vod.Key),
+		selector:      selector,
 	}
 
 	// 1개의 VOD만 있다고 가정
@@ -34,81 +36,76 @@ func NewLegacyLB(cfg data.Config, selector VODSelector) (LoadBalancer, error) {
 	if len(l.VODs) != 1 {
 		return nil, fmt.Errorf("invalid vod info")
 	}
-
+	err := l.selector.Init(cfg)
+	if err != nil {
+		return nil, err
+	}
 	return l, nil
 }
 
 // GetVODs :
-func (lb *LegacyLB) GetVODs() map[vod.Key]*vod.VOD {
+func (lb *FilebaseLB) GetVODs() map[vod.Key]*vod.VOD {
 	return lb.VODs
 }
 
 // Status :
-func (lb *LegacyLB) Status(t time.Time) *status.Status {
+func (lb *FilebaseLB) Status(t time.Time) *status.Status {
 	return lb.MakeStatus(t)
 }
 
 // StartSession :
-func (lb *LegacyLB) StartSession(evt *data.SessionEvent) error {
-	// 1개의 VOD만 있다고 가정
-	var firstK vod.Key
-	for k := range lb.VODs {
-		firstK = k
-		break
+func (lb *FilebaseLB) StartSession(evt *data.SessionEvent) error {
+	k, err := lb.selector.VODSelect(evt, lb)
+	if err == ErrFileNotFound {
+		// file 없으면 StartChunk 시 cache miss 처리
+		return nil
+	} else if err != nil {
+		return fmt.Errorf("failed to select VOD, %v", err)
 	}
 
-	err := lb.VODs[firstK].StartSession(evt)
+	err = lb.VODs[k].StartSession(evt)
 	if err != nil {
 		return fmt.Errorf("failed to start session in VOD, %v", err)
 	}
-	lb.vodSessionMap[evt.SessionID] = firstK
+	lb.vodSessionMap[evt.SessionID] = k
 	return nil
 }
 
 // EndSession :
-func (lb *LegacyLB) EndSession(evt *data.SessionEvent) error {
+func (lb *FilebaseLB) EndSession(evt *data.SessionEvent) error {
 	key, ok := lb.vodSessionMap[evt.SessionID]
-	if !ok {
-		return fmt.Errorf("not exists session %v", evt.SessionID)
+	if ok {
+		err := lb.VODs[key].EndSession(evt)
+		if err != nil {
+			return fmt.Errorf("failed to end session in VOD, %v", err)
+		}
+		delete(lb.vodSessionMap, evt.SessionID)
 	}
-	err := lb.VODs[key].EndSession(evt)
-	if err != nil {
-		return fmt.Errorf("failed to end session in VOD, %v", err)
-	}
-	delete(lb.vodSessionMap, evt.SessionID)
 	return nil
 }
 
 // StartChunk :
-func (lb *LegacyLB) StartChunk(evt *data.ChunkEvent) (useOrigin bool, err error) {
+func (lb *FilebaseLB) StartChunk(evt *data.ChunkEvent) (useOrigin bool, err error) {
 	_, ok := lb.vodSessionMap[evt.SessionID]
-	if !ok {
-		return false, fmt.Errorf("not exists session %v", evt.SessionID)
-	}
-
-	if evt.IsCenter {
+	if ok {
+		lb.HitCount++
+	} else {
 		lb.MissCount++
 		lb.OriginBps += evt.Bps
-	} else {
-		lb.HitCount++
 	}
-	return evt.IsCenter, nil
+	return !ok, nil
 }
 
 // EndChunk :
-func (lb *LegacyLB) EndChunk(evt *data.ChunkEvent, useOrigin bool) error {
-	_, ok := lb.vodSessionMap[evt.SessionID]
-	if !ok {
-		return fmt.Errorf("not exists session %v", evt.SessionID)
-	}
-	if evt.IsCenter {
+func (lb *FilebaseLB) EndChunk(evt *data.ChunkEvent, useOrigin bool) error {
+	if useOrigin {
 		lb.OriginBps -= evt.Bps
 	}
 	return nil
 }
 
 // MakeStatus :
-func (lb *LegacyLB) MakeStatus(t time.Time) *status.Status {
+func (lb *FilebaseLB) MakeStatus(t time.Time) *status.Status {
 	st := &status.Status{
 		Time:   t,
 		Origin: &status.OriginStatus{},
