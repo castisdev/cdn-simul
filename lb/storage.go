@@ -26,7 +26,7 @@ type HitRanker struct {
 	fileInfos   *data.FileInfos
 	shiftPeriod time.Duration
 	shiftT      time.Time
-	contentHits []map[int]int64
+	contentHits []map[int]int64 // slot(shift 시간)별 content hit 관리
 }
 
 // NewHitRanker :
@@ -84,10 +84,14 @@ func (f *HitRanker) Deletable(contents map[int]struct{}, minDelSize int64) []int
 var ErrNotExistsAddable = errors.New("not exists addable file")
 
 // Addable :
-func (f *HitRanker) Addable(contents map[int]struct{}, storageSize int64) (id, rank int, err error) {
+func (f *HitRanker) Addable(contents map[int]struct{}, storageSize int64, exclude []int) (id, rank int, err error) {
 	var list []contentHit
 	added := make(map[int]struct{})
 	var empty struct{}
+	for _, v := range exclude {
+		added[v] = empty
+	}
+
 	for _, v := range f.contentHits {
 		for k := range v {
 			if _, ok := added[k]; ok {
@@ -227,12 +231,20 @@ func (s *Storage) completedPush() (int, error) {
 		return 0, fmt.Errorf("not exists completed file")
 	}
 	var v int
-	v, s.pushingQ = s.pushingQ[len(s.pushingQ)-1], s.pushingQ[:len(s.pushingQ)-1]
+	v, s.pushingQ = s.pushingQ[0], s.pushingQ[1:len(s.pushingQ)]
 	return v, nil
 }
 
 func (s *Storage) push() error {
-	add, rank, err := s.hitRanker.Addable(s.contents, s.limitSize)
+	compl, err := s.completedPush()
+	if err == nil {
+		var empty struct{}
+		s.contents[compl] = empty
+		s.curSize += s.fileInfos.Info(compl).Size
+		fmt.Printf("added %s\n", s.fileInfos.Info(compl).File)
+	}
+
+	add, rank, err := s.hitRanker.Addable(s.contents, s.limitSize, s.pushingQ)
 	if err == ErrNotExistsAddable {
 		return nil
 	} else if err != nil {
@@ -247,14 +259,6 @@ func (s *Storage) push() error {
 			s.curSize -= s.fileInfos.Info(v).Size
 			fmt.Printf("deleted %s\n", s.fileInfos.Info(v).File)
 		}
-	}
-
-	compl, err := s.completedPush()
-	if err == nil {
-		var empty struct{}
-		s.contents[compl] = empty
-		s.curSize += s.fileInfos.Info(add).Size
-		fmt.Printf("added %s\n", s.fileInfos.Info(compl).File)
 	}
 
 	s.pushStart(add)

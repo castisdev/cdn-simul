@@ -1,6 +1,7 @@
 package simul
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -10,7 +11,49 @@ import (
 	"github.com/castisdev/cdn-simul/lb"
 )
 
+var q []int
+
+func pushStart(v int) {
+	q = append(q, v)
+	fmt.Printf("after pushStart %v, %v\n", v, q)
+}
+
+func completedPush() (int, error) {
+	if len(q) < 2 {
+		return 0, fmt.Errorf("not exists completed file")
+	}
+	var v int
+	v, q = q[0], q[1:len(q)]
+	fmt.Printf("after completed %v\n", q)
+	return v, nil
+}
+
 func TestSimulator_Run_Simple(t *testing.T) {
+	{
+		v, err := completedPush()
+		fmt.Printf("completed %v %v\n", v, err)
+		pushStart(1)
+	}
+
+	{
+		v, err := completedPush()
+		fmt.Printf("completed %v %v\n", v, err)
+		pushStart(2)
+	}
+
+	{
+		v, err := completedPush()
+		fmt.Printf("completed %v %v\n", v, err)
+		pushStart(3)
+	}
+
+	{
+		v, err := completedPush()
+		fmt.Printf("completed %v %v\n", v, err)
+		pushStart(4)
+	}
+	return
+
 	cfg := data.Config{
 		VODs: []data.VODConfig{data.VODConfig{VodID: "vod1", StorageSize: 1000000000, LimitSession: 10000, LimitBps: 1000000000000}},
 	}
