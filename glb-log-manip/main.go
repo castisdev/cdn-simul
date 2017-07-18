@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/castisdev/cdn-simul/glblog"
+	"github.com/castisdev/cdn-simul/loginfo"
 	"github.com/castisdev/cdn-simul/vodlog"
 	"github.com/syndtr/goleveldb/leveldb"
 )
@@ -49,8 +50,8 @@ func main() {
 		log.Fatal(err)
 	}
 
-	files := glblog.ListLogFiles(*sdir)
-	sort.Sort(glblog.LogFileInfoSorter(files))
+	files := loginfo.ListLogFiles(*sdir, "GLB")
+	sort.Sort(loginfo.LogFileInfoSorter(files))
 
 	fmap := make(map[string]*fileInfo)
 

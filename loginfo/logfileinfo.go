@@ -1,4 +1,4 @@
-package glblog
+package loginfo
 
 import (
 	"fmt"
@@ -9,6 +9,9 @@ import (
 	"strings"
 	"time"
 )
+
+var layout = "2006-01-02 15:04:05.000"
+var dateLayout = "2006-01-02"
 
 // LogFileInfo :
 type LogFileInfo struct {
@@ -38,7 +41,7 @@ func (lis LogFileInfoSorter) Less(i, j int) bool {
 }
 
 // ListLogFiles :
-func ListLogFiles(sdir string) []LogFileInfo {
+func ListLogFiles(sdir, suffix string) []LogFileInfo {
 	files, err := ioutil.ReadDir(sdir)
 	if err != nil {
 		log.Fatal(err, sdir)
@@ -49,11 +52,12 @@ func ListLogFiles(sdir string) []LogFileInfo {
 	for _, f := range files {
 		if f.IsDir() {
 			fpath := path.Join(sdir, f.Name())
-			logs = append(logs, ListLogFiles(fpath)...)
+			logs = append(logs, ListLogFiles(fpath, suffix)...)
 			continue
 		}
 
-		if strings.HasSuffix(f.Name(), "_GLB.log") {
+		
+		if strings.HasSuffix(f.Name(), fmt.Sprintf("_%s.log", suffix)) {
 			li := LogFileInfo{Fpath: path.Join(sdir, f.Name())}
 			strs := strings.Split(f.Name(), "_")
 			if len(strs) != 2 {

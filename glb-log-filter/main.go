@@ -11,7 +11,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/castisdev/cdn-simul/glblog"
+	"github.com/castisdev/cdn-simul/loginfo"
 )
 
 func main() {
@@ -21,8 +21,8 @@ func main() {
 	flag.Parse()
 
 	os.MkdirAll(*odir, 0777)
-	files := glblog.ListLogFiles(*sdir)
-	sort.Sort(glblog.LogFileInfoSorter(files))
+	files := loginfo.ListLogFiles(*sdir, "GLB")
+	sort.Sort(loginfo.LogFileInfoSorter(files))
 
 	sidMap := map[string]struct{}{}
 	for _, lfi := range files {
@@ -32,7 +32,7 @@ func main() {
 
 var dateLayout = "2006-01-02"
 
-func doOneFile(lfi glblog.LogFileInfo, odir string, isCenter bool, sidMap map[string]struct{}) {
+func doOneFile(lfi loginfo.LogFileInfo, odir string, isCenter bool, sidMap map[string]struct{}) {
 	if isCenter {
 		dir := filepath.Dir(lfi.Fpath)
 		dir = filepath.Dir(dir)
