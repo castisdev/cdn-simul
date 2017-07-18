@@ -350,6 +350,7 @@ func TestSimulator_Run_Filebase(t *testing.T) {
 		StatDuration: 24 * time.Hour,
 		ShiftPeriod:  time.Hour,
 		PushPeriod:   5 * time.Minute,
+		PushDelayN:   2,
 		Fileinfos:    fi,
 		InitContents: []string{"d.mpg", "e.mpg"},
 	}

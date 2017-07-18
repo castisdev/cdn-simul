@@ -19,7 +19,7 @@ import (
 func main() {
 	var cfgFile, dbFile, cpuprofile, memprofile, lp, dbAddr, dbName, lbType, hotListUpdatePeriod, bypass, fbPeriod, simulID, start string
 	var statDu, shiftP, pushP, fiFilepath, lbHistory string
-	var readEventCount, hotRankLimit int
+	var readEventCount, hotRankLimit, pushDelayN int
 	var firstBypass bool
 
 	flag.StringVar(&cfgFile, "cfg", "cdn-simul.json", "config file")
@@ -36,6 +36,7 @@ func main() {
 	flag.StringVar(&statDu, "stat-range", "24h", "data collect window size (filebase)")
 	flag.StringVar(&shiftP, "shift-period", "1h", "data collect window shift period (filebase)")
 	flag.StringVar(&pushP, "push-period", "5m", "file push period (filebase)")
+	flag.IntVar(&pushDelayN, "push-delay", 2, "file push delay number, (push time = push-period * push-delay) (filebase)")
 	flag.StringVar(&fiFilepath, "file-info", "fileinfo.csv", "csv file path contains id,name,size,bps,register-time (filebase)")
 	flag.StringVar(&lbHistory, "lb-history", "", "LB hitcount history file for initial contents (filebase)")
 	flag.StringVar(&bypass, "bypass", "", "text file that has contents list to bypass")
@@ -154,6 +155,7 @@ func main() {
 		StatDuration:        sd,
 		ShiftPeriod:         sp,
 		PushPeriod:          pp,
+		PushDelayN:          pushDelayN,
 		Fileinfos:           fi,
 	}
 	if lbHistory != "" {

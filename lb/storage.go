@@ -163,25 +163,27 @@ func (f *HitRanker) shift(t time.Time) {
 
 // Storage :
 type Storage struct {
-	fileInfos   *data.FileInfos
-	hitRanker   *HitRanker
-	contents    map[int]struct{}
-	curSize     int64
-	limitSize   int64
-	pushedT     time.Time
-	pushPeriod  time.Duration
-	delayPeriod time.Duration
-	pushingQ    []int
+	fileInfos  *data.FileInfos
+	hitRanker  *HitRanker
+	contents   map[int]struct{}
+	curSize    int64
+	limitSize  int64
+	pushedT    time.Time
+	pushPeriod time.Duration
+	pushDelayN int // push 배포 시간 = pushPeriod * pushDelayN
+	pushingQ   []int
 }
 
 // NewStorage :
-func NewStorage(statDuration, shiftPeriod, pushPeriod time.Duration, limitSize int64, fi *data.FileInfos, initContents []string) *Storage {
+func NewStorage(statDuration, shiftPeriod, pushPeriod time.Duration,
+	pushDelayN int, limitSize int64, fi *data.FileInfos, initContents []string) *Storage {
 	s := &Storage{
 		fileInfos:  fi,
 		hitRanker:  NewHitRanker(statDuration, shiftPeriod, fi),
 		contents:   make(map[int]struct{}),
 		limitSize:  limitSize,
 		pushPeriod: pushPeriod,
+		pushDelayN: pushDelayN,
 	}
 	var empty struct{}
 	var totalSize int64
@@ -227,7 +229,7 @@ func (s *Storage) pushStart(v int) {
 }
 
 func (s *Storage) completedPush() (int, error) {
-	if len(s.pushingQ) < 2 {
+	if len(s.pushingQ) < s.pushDelayN {
 		return 0, fmt.Errorf("not exists completed file")
 	}
 	var v int

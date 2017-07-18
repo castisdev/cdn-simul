@@ -80,7 +80,7 @@ func TestHitRanker(t *testing.T) {
 		}
 	}
 	addableFn := func(name string, curContents map[int]struct{}, storageSize int64, wantErr bool, expected int) {
-		ret, err := dc.Addable(curContents, storageSize)
+		ret, _, err := dc.Addable(curContents, storageSize, nil)
 		if (err != nil) != wantErr {
 			t.Errorf("[%v] %v != %v", name, wantErr, err != nil)
 			return
