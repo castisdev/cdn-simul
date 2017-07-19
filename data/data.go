@@ -64,3 +64,9 @@ func (s ChunkEvent) String() string {
 	return fmt.Sprintf("Chunk %s %s %s size:%d bps:%d idx:%d chunksize:%d bypass:%v center:%v",
 		s.Time.Format(layout), s.SessionID, s.FileName, s.FileSize, s.Bps, s.Index, s.ChunkSize, s.Bypass, s.IsCenter)
 }
+
+// DeliverEvent :
+type DeliverEvent struct {
+	Time     time.Time
+	FileName string
+}

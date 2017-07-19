@@ -27,6 +27,7 @@ type HitRanker struct {
 	shiftPeriod time.Duration
 	shiftT      time.Time
 	contentHits []map[int]int64 // slot(shift 시간)별 content hit 관리
+	curT        time.Time
 }
 
 // NewHitRanker :
@@ -52,12 +53,16 @@ func (f *HitRanker) Update(evt *data.SessionEvent) {
 		f.shiftT = evt.Time
 	}
 	f.updateHit(evt)
+	f.curT = evt.Time
 }
 
 // Deletable :
 func (f *HitRanker) Deletable(contents map[int]struct{}, minDelSize int64) []int {
 	var list []contentHit
 	for k := range contents {
+		if f.curT.Sub(f.fileInfos.Info(k).RegisterT) < 24*time.Hour {
+			continue
+		}
 		v := contentHit{
 			filename: k,
 			hit:      f.hit(k),
@@ -161,6 +166,12 @@ func (f *HitRanker) shift(t time.Time) {
 	}
 }
 
+// AddDeleter :
+type AddDeleter interface {
+	Add(fname int)
+	Delete(minDelSize int64)
+}
+
 // Storage :
 type Storage struct {
 	fileInfos  *data.FileInfos
@@ -172,11 +183,12 @@ type Storage struct {
 	pushPeriod time.Duration
 	pushDelayN int // push 배포 시간 = pushPeriod * pushDelayN
 	pushingQ   []int
+	deliverP   *deliverProcessor
 }
 
 // NewStorage :
 func NewStorage(statDuration, shiftPeriod, pushPeriod time.Duration,
-	pushDelayN int, limitSize int64, fi *data.FileInfos, initContents []string) *Storage {
+	pushDelayN int, limitSize int64, fi *data.FileInfos, initContents []string, events []*data.DeliverEvent) *Storage {
 	s := &Storage{
 		fileInfos:  fi,
 		hitRanker:  NewHitRanker(statDuration, shiftPeriod, fi),
@@ -184,6 +196,9 @@ func NewStorage(statDuration, shiftPeriod, pushPeriod time.Duration,
 		limitSize:  limitSize,
 		pushPeriod: pushPeriod,
 		pushDelayN: pushDelayN,
+	}
+	if events != nil {
+		s.deliverP = &deliverProcessor{events: events, fileInfos: fi}
 	}
 	var empty struct{}
 	var totalSize int64
@@ -214,6 +229,9 @@ func (s *Storage) Update(evt *data.SessionEvent) error {
 			return fmt.Errorf("failed to push, %v", err)
 		}
 	}
+	if s.deliverP != nil {
+		s.deliverP.process(evt.Time, s)
+	}
 
 	return nil
 }
@@ -222,6 +240,24 @@ func (s *Storage) Update(evt *data.SessionEvent) error {
 func (s *Storage) Exists(file int) bool {
 	_, ok := s.contents[file]
 	return ok
+}
+
+// Add :
+func (s *Storage) Add(fname int) {
+	var empty struct{}
+	s.contents[fname] = empty
+	s.curSize += s.fileInfos.Info(fname).Size
+	fmt.Printf("added %s\n", s.fileInfos.Info(fname).File)
+}
+
+// Delete :
+func (s *Storage) Delete(minDelSize int64) {
+	del := s.hitRanker.Deletable(s.contents, minDelSize)
+	for _, v := range del {
+		delete(s.contents, v)
+		s.curSize -= s.fileInfos.Info(v).Size
+		fmt.Printf("deleted %s\n", s.fileInfos.Info(v).File)
+	}
 }
 
 func (s *Storage) pushStart(v int) {
@@ -233,6 +269,7 @@ func (s *Storage) completedPush() (int, error) {
 		return 0, fmt.Errorf("not exists completed file")
 	}
 	var v int
+	// pushingQ: FIFO (get first item, and shift)
 	v, s.pushingQ = s.pushingQ[0], s.pushingQ[1:len(s.pushingQ)]
 	return v, nil
 }
@@ -240,10 +277,7 @@ func (s *Storage) completedPush() (int, error) {
 func (s *Storage) push() error {
 	compl, err := s.completedPush()
 	if err == nil {
-		var empty struct{}
-		s.contents[compl] = empty
-		s.curSize += s.fileInfos.Info(compl).Size
-		fmt.Printf("added %s\n", s.fileInfos.Info(compl).File)
+		s.Add(compl)
 	}
 
 	add, rank, err := s.hitRanker.Addable(s.contents, s.limitSize, s.pushingQ)
@@ -255,16 +289,37 @@ func (s *Storage) push() error {
 
 	delSize := (s.curSize + s.fileInfos.Info(add).Size) - s.limitSize
 	if delSize > 0 {
-		del := s.hitRanker.Deletable(s.contents, delSize)
-		for _, v := range del {
-			delete(s.contents, v)
-			s.curSize -= s.fileInfos.Info(v).Size
-			fmt.Printf("deleted %s\n", s.fileInfos.Info(v).File)
-		}
+		s.Delete(delSize)
 	}
 
 	s.pushStart(add)
 	fmt.Printf("add start %s, rank[%d]\n", s.fileInfos.Info(add).File, rank)
 
 	return nil
+}
+
+type deliverProcessor struct {
+	events    []*data.DeliverEvent
+	curIdx    int
+	fileInfos *data.FileInfos
+}
+
+func (p *deliverProcessor) process(t time.Time, adder AddDeleter) error {
+	for {
+		if p.curIdx >= len(p.events) || p.events[p.curIdx].Time.Sub(t) > 0 {
+			return nil
+		}
+		ev := p.events[p.curIdx]
+		if p.fileInfos.Exists(ev.FileName) == false {
+			GB := int64(1024 * 1024 * 1024)
+			p.fileInfos.AddOne(ev.FileName, 2*GB, ev.Time)
+		}
+		f := p.fileInfos.IntName(ev.FileName)
+		adder.Delete(p.fileInfos.Info(f).Size)
+		adder.Add(f)
+		p.curIdx++
+		if p.curIdx >= len(p.events) {
+			return nil
+		}
+	}
 }

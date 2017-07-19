@@ -25,7 +25,7 @@ func StrToTime(str string) time.Time {
 func TestHitRanker(t *testing.T) {
 
 	str := `
-1,a.mpg,6000000,500000000,2017-01-01T00:00:00
+1,a.mpg,6000000,500000000,2016-02-01T00:00:00
 2,b.mpg,6000000,500000000,2016-01-01T00:00:00
 3,c.mpg,6000000,500000000,2015-01-01T00:00:00
 4,d.mpg,6000000,500000000,2014-01-01T00:00:00
@@ -124,4 +124,45 @@ func TestHitRanker(t *testing.T) {
 
 	eventFn("e.mpg", "2017-02-01 00:30:00", "s6")
 	addableFn("addable after e.mpg hit 2", curContents, 1500000000, false, id("e.mpg"))
+}
+
+func TestStorage_DeliverProcessor(t *testing.T) {
+	fi, _ := data.NewEmptyFileInfos()
+
+	eventFn := func(strTime string, st *Storage) {
+		evt := &data.SessionEvent{
+			FileName:    "a.mpg",
+			SessionID:   "sid",
+			Time:        StrToTime(strTime),
+			IntFileName: 1,
+			FileSize:    500000000,
+			Bps:         6000000,
+			Duration:    time.Minute,
+		}
+		st.Update(evt)
+	}
+
+	statDuration := 24 * time.Hour
+	shiftPeriod := 1 * time.Hour
+	pushPeriod := 10000 * time.Hour // no push
+	GB := int64(1024 * 1024 * 1024)
+
+	adsFile := "ads1.mpg"
+	evts := []*data.DeliverEvent{
+		&data.DeliverEvent{Time: StrToTime("2017-01-01 00:01:00"), FileName: adsFile},
+	}
+	st := NewStorage(statDuration, shiftPeriod, pushPeriod, 1, 10*GB, fi, nil, evts)
+
+	eventFn("2017-01-01 00:00:59", st)
+	if st.Exists(fi.IntName(adsFile)) {
+		t.Errorf("%v exists", adsFile)
+	}
+	eventFn("2017-01-01 00:01:00", st)
+	if st.Exists(fi.IntName(adsFile)) == false {
+		t.Errorf("%v not exists", adsFile)
+	}
+	eventFn("2017-01-01 00:02:00", st)
+	if st.Exists(fi.IntName(adsFile)) == false {
+		t.Errorf("%v not exists", adsFile)
+	}
 }

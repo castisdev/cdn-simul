@@ -126,7 +126,7 @@ func LoadFromLBHistory(filepath string) ([]string, error) {
 
 	records, err := r.ReadAll()
 	if err != nil {
-		return nil, fmt.Errorf("failed to read fileinfo file, %v", err)
+		return nil, fmt.Errorf("failed to read LB History file, %v", err)
 	}
 
 	var files []string
@@ -141,4 +141,33 @@ func LoadFromLBHistory(filepath string) ([]string, error) {
 	}
 	fmt.Printf("loaded from LB history file, len(%v),size(%v)\n", len(files), totalSize)
 	return files, nil
+}
+
+func strToTime(str string) time.Time {
+	var layout = "2006-01-02 15:04:05.000"
+	loc, _ := time.LoadLocation("Local")
+	t, _ := time.ParseInLocation(layout, str, loc)
+	return t
+}
+
+// LoadFromADSAdapterCsv :
+// adsadapter.csv format : [deliver-end-time,filename]
+func LoadFromADSAdapterCsv(filepath string) ([]*DeliverEvent, error) {
+	b, err := ioutil.ReadFile(filepath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read %v, %v", filepath, err)
+	}
+	r := csv.NewReader(strings.NewReader(string(b)))
+
+	records, err := r.ReadAll()
+	if err != nil {
+		return nil, fmt.Errorf("failed to read ADSAdapter csv file, %v", err)
+	}
+
+	var events []*DeliverEvent
+	for _, v := range records {
+		events = append(events, &DeliverEvent{Time: strToTime(v[0] + " " + v[1]), FileName: v[2]})
+	}
+	fmt.Printf("loaded from %v, count(%v)\n", filepath, len(events))
+	return events, nil
 }

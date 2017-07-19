@@ -18,7 +18,7 @@ import (
 
 func main() {
 	var cfgFile, dbFile, cpuprofile, memprofile, lp, dbAddr, dbName, lbType, hotListUpdatePeriod, bypass, fbPeriod, simulID, start string
-	var statDu, shiftP, pushP, fiFilepath, lbHistory string
+	var statDu, shiftP, pushP, fiFilepath, lbHistory, adsFile string
 	var readEventCount, hotRankLimit, pushDelayN int
 	var firstBypass bool
 
@@ -39,6 +39,7 @@ func main() {
 	flag.IntVar(&pushDelayN, "push-delay", 2, "file push delay number, (push time = push-period * push-delay) (filebase)")
 	flag.StringVar(&fiFilepath, "file-info", "fileinfo.csv", "csv file path contains id,name,size,bps,register-time (filebase)")
 	flag.StringVar(&lbHistory, "lb-history", "", "LB hitcount history file for initial contents (filebase)")
+	flag.StringVar(&adsFile, "ads-csv", "", "ADSAdapter csv file (filebase)")
 	flag.StringVar(&bypass, "bypass", "", "text file that has contents list to bypass")
 	flag.BoolVar(&firstBypass, "first-bypass", false, "if true, chunks of first hit session for 24h will be bypassed")
 	flag.StringVar(&fbPeriod, "fb-period", "24h", "first bypass list update period (only used with first-bypass option)")
@@ -164,6 +165,13 @@ func main() {
 			log.Fatal(err)
 		}
 		lbOpt.InitContents = initList
+	}
+	if adsFile != "" {
+		adsEv, err := data.LoadFromADSAdapterCsv(adsFile)
+		if err != nil {
+			log.Fatal(err)
+		}
+		lbOpt.DeliverEvent = adsEv
 	}
 	alb, err := simul.NewLoadBalancer(lbOpt)
 	if err != nil {
