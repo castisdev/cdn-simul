@@ -183,12 +183,13 @@ type Storage struct {
 	pushPeriod time.Duration
 	pushDelayN int // push 배포 시간 = pushPeriod * pushDelayN
 	pushingQ   []int
+	dawnPushN  int // 03 ~ 09시 push할 컨텐츠 수 배수
 	deliverP   *deliverProcessor
 }
 
 // NewStorage :
 func NewStorage(statDuration, shiftPeriod, pushPeriod time.Duration,
-	pushDelayN int, limitSize int64, fi *data.FileInfos, initContents []string, events []*data.DeliverEvent) *Storage {
+	pushDelayN, dawnPushN int, limitSize int64, fi *data.FileInfos, initContents []string, events []*data.DeliverEvent) *Storage {
 	s := &Storage{
 		fileInfos:  fi,
 		hitRanker:  NewHitRanker(statDuration, shiftPeriod, fi),
@@ -196,6 +197,10 @@ func NewStorage(statDuration, shiftPeriod, pushPeriod time.Duration,
 		limitSize:  limitSize,
 		pushPeriod: pushPeriod,
 		pushDelayN: pushDelayN,
+		dawnPushN:  dawnPushN,
+	}
+	if dawnPushN <= 0 {
+		s.dawnPushN = 1
 	}
 	if events != nil {
 		s.deliverP = &deliverProcessor{events: events, fileInfos: fi}
@@ -225,7 +230,7 @@ func (s *Storage) Update(evt *data.SessionEvent) error {
 		s.pushedT = evt.Time
 	} else if evt.Time.Sub(s.pushedT) >= s.pushPeriod {
 		s.pushedT = evt.Time
-		if err := s.push(); err != nil {
+		if err := s.push(evt.Time); err != nil {
 			return fmt.Errorf("failed to push, %v", err)
 		}
 	}
@@ -274,7 +279,20 @@ func (s *Storage) completedPush() (int, error) {
 	return v, nil
 }
 
-func (s *Storage) push() error {
+func (s *Storage) push(t time.Time) error {
+	if 3 <= t.Hour() && t.Hour() <= 9 {
+		for i := 0; i < s.dawnPushN; i++ {
+			err := s.pushOne()
+			if err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	return s.pushOne()
+}
+
+func (s *Storage) pushOne() error {
 	compl, err := s.completedPush()
 	if err == nil {
 		s.Add(compl)

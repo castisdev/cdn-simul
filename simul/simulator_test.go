@@ -317,8 +317,8 @@ func TestSimulator_Run_Filebase(t *testing.T) {
 		},
 		&glblog.SessionInfo{
 			SID:       "sess-C",
-			Started:   StrToTime("2017-01-01 01:06:00.000"),
-			Ended:     StrToTime("2017-01-01 01:06:01.000"),
+			Started:   StrToTime("2017-01-01 03:06:00.000"),
+			Ended:     StrToTime("2017-01-01 03:06:01.000"),
 			Filename:  "b.mpg",
 			Bandwidth: 6000000,
 			Offset:    0,
@@ -351,6 +351,7 @@ func TestSimulator_Run_Filebase(t *testing.T) {
 		ShiftPeriod:  time.Hour,
 		PushPeriod:   5 * time.Minute,
 		PushDelayN:   2,
+		DawnPushN:    2,
 		Fileinfos:    fi,
 		InitContents: []string{"d.mpg", "e.mpg"},
 	}

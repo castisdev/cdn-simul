@@ -19,7 +19,7 @@ import (
 func main() {
 	var cfgFile, dbFile, cpuprofile, memprofile, lp, dbAddr, dbName, lbType, hotListUpdatePeriod, bypass, fbPeriod, simulID, start string
 	var statDu, shiftP, pushP, fiFilepath, lbHistory, adsFile string
-	var readEventCount, hotRankLimit, pushDelayN int
+	var readEventCount, hotRankLimit, pushDelayN, dawnPushN int
 	var firstBypass bool
 
 	flag.StringVar(&cfgFile, "cfg", "cdn-simul.json", "config file")
@@ -37,6 +37,7 @@ func main() {
 	flag.StringVar(&shiftP, "shift-period", "1h", "data collect window shift period (filebase)")
 	flag.StringVar(&pushP, "push-period", "5m", "file push period (filebase)")
 	flag.IntVar(&pushDelayN, "push-delay", 2, "file push delay number, (push time = push-period * push-delay) (filebase)")
+	flag.IntVar(&dawnPushN, "dawn-push", 1, "push contents count in the dawn of day (filebase)")
 	flag.StringVar(&fiFilepath, "file-info", "fileinfo.csv", "csv file path contains id,name,size,bps,register-time (filebase)")
 	flag.StringVar(&lbHistory, "lb-history", "", "LB hitcount history file for initial contents (filebase)")
 	flag.StringVar(&adsFile, "ads-csv", "", "ADSAdapter csv file (filebase)")
@@ -157,6 +158,7 @@ func main() {
 		ShiftPeriod:         sp,
 		PushPeriod:          pp,
 		PushDelayN:          pushDelayN,
+		DawnPushN:           dawnPushN,
 		Fileinfos:           fi,
 	}
 	if lbHistory != "" {

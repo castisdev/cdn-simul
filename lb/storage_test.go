@@ -151,7 +151,7 @@ func TestStorage_DeliverProcessor(t *testing.T) {
 	evts := []*data.DeliverEvent{
 		&data.DeliverEvent{Time: StrToTime("2017-01-01 00:01:00"), FileName: adsFile},
 	}
-	st := NewStorage(statDuration, shiftPeriod, pushPeriod, 1, 10*GB, fi, nil, evts)
+	st := NewStorage(statDuration, shiftPeriod, pushPeriod, 1, 1, 10*GB, fi, nil, evts)
 
 	eventFn("2017-01-01 00:00:59", st)
 	if st.Exists(fi.IntName(adsFile)) {

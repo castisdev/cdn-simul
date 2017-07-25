@@ -429,6 +429,7 @@ type LBOption struct {
 	ShiftPeriod         time.Duration
 	PushPeriod          time.Duration
 	PushDelayN          int
+	DawnPushN           int
 	Fileinfos           *data.FileInfos
 	InitContents        []string
 	DeliverEvent        []*data.DeliverEvent
@@ -440,7 +441,7 @@ func NewLoadBalancer(opt LBOption) (lb.LoadBalancer, error) {
 	case "legacy":
 		return lb.NewLegacyLB(opt.Cfg, &lb.SameHashingWeight{})
 	case "filebase":
-		st := lb.NewStorage(opt.StatDuration, opt.ShiftPeriod, opt.PushPeriod, opt.PushDelayN,
+		st := lb.NewStorage(opt.StatDuration, opt.ShiftPeriod, opt.PushPeriod, opt.PushDelayN, opt.DawnPushN,
 			opt.Cfg.VODs[0].StorageSize, opt.Fileinfos, opt.InitContents, opt.DeliverEvent)
 		return lb.NewFilebaseLB(opt.Cfg, lb.NewFileBase(st))
 	}
