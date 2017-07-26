@@ -255,6 +255,8 @@ func (s *Simulator) Run() {
 			FileSize:    ev.Filesize,
 			Bps:         int64(ev.Bandwidth),
 			Duration:    ev.Ended.Sub(ev.Started),
+			IsCenter:    ev.IsCenter,
+			IsSemiSetup: ev.IsSemiSetup,
 		}
 		err = s.lb.StartSession(&sEvt)
 		if err != nil {
@@ -433,6 +435,7 @@ type LBOption struct {
 	Fileinfos           *data.FileInfos
 	InitContents        []string
 	DeliverEvent        []*data.DeliverEvent
+	UseSemiSetup        bool
 }
 
 // NewLoadBalancer :
@@ -441,8 +444,9 @@ func NewLoadBalancer(opt LBOption) (lb.LoadBalancer, error) {
 	case "legacy":
 		return lb.NewLegacyLB(opt.Cfg, &lb.SameHashingWeight{})
 	case "filebase":
+		opt.UseSemiSetup = true
 		st := lb.NewStorage(opt.StatDuration, opt.ShiftPeriod, opt.PushPeriod, opt.PushDelayN, opt.DawnPushN,
-			opt.Cfg.VODs[0].StorageSize, opt.Fileinfos, opt.InitContents, opt.DeliverEvent)
+			opt.Cfg.VODs[0].StorageSize, opt.Fileinfos, opt.InitContents, opt.DeliverEvent, opt.UseSemiSetup)
 		return lb.NewFilebaseLB(opt.Cfg, lb.NewFileBase(st))
 	}
 	s := NewVODSelector(opt.LBType, opt.HotListUpdatePeriod, opt.HotRankLimit)

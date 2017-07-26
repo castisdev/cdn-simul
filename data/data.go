@@ -37,6 +37,8 @@ type SessionEvent struct {
 	FileSize    int64
 	Bps         int64
 	Duration    time.Duration
+	IsCenter    bool
+	IsSemiSetup bool
 }
 
 func (s SessionEvent) String() string {

@@ -204,6 +204,9 @@ func doOneFile(fpath string, smap map[string]*glblog.SessionInfo, fmap map[strin
 			} else if _, ok := gmap[si.SID]; ok {
 				si.IsCenter = true
 			}
+
+			si.IsSemiSetup = strings.Contains(line, "Successfully New SemiSetup Session")
+
 			smap[si.SID] = si
 		} else if strings.Contains(line, "OnTeardownNotification") {
 			strs := strings.SplitN(line, ",", 8)

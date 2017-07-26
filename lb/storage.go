@@ -23,20 +23,22 @@ func (chs hitRegTSorter) Less(i, j int) bool {
 
 // HitRanker :
 type HitRanker struct {
-	fileInfos   *data.FileInfos
-	shiftPeriod time.Duration
-	shiftT      time.Time
-	contentHits []map[int]int64 // slot(shift 시간)별 content hit 관리
-	curT        time.Time
+	fileInfos    *data.FileInfos
+	shiftPeriod  time.Duration
+	shiftT       time.Time
+	contentHits  []map[int]int64 // slot(shift 시간)별 content hit 관리
+	curT         time.Time
+	useSemiSetup bool
 }
 
 // NewHitRanker :
-func NewHitRanker(statDuration, shiftPeriod time.Duration, fi *data.FileInfos) *HitRanker {
+func NewHitRanker(statDuration, shiftPeriod time.Duration, fi *data.FileInfos, useSemiSetup bool) *HitRanker {
 	hitSlotSize := int(statDuration.Minutes() / shiftPeriod.Minutes())
 	f := &HitRanker{
-		fileInfos:   fi,
-		shiftPeriod: shiftPeriod,
-		contentHits: make([]map[int]int64, hitSlotSize),
+		fileInfos:    fi,
+		shiftPeriod:  shiftPeriod,
+		contentHits:  make([]map[int]int64, hitSlotSize),
+		useSemiSetup: useSemiSetup,
 	}
 	for i := 0; i < hitSlotSize; i++ {
 		f.contentHits[i] = make(map[int]int64)
@@ -52,7 +54,7 @@ func (f *HitRanker) Update(evt *data.SessionEvent) {
 		f.shift(evt.Time)
 		f.shiftT = evt.Time
 	}
-	f.updateHit(evt)
+	f.checkAndUpdateHit(evt)
 	f.curT = evt.Time
 }
 
@@ -134,6 +136,17 @@ func (f *HitRanker) Addable(contents map[int]struct{}, storageSize int64, exclud
 	return
 }
 
+func (f *HitRanker) checkAndUpdateHit(evt *data.SessionEvent) {
+	if f.useSemiSetup {
+		// 지역 SemiSetup 로그만 hit 업데이트
+		if evt.IsCenter || evt.IsSemiSetup {
+			f.updateHit(evt)
+		}
+	} else {
+		f.updateHit(evt)
+	}
+}
+
 func (f *HitRanker) updateHit(evt *data.SessionEvent) {
 	curIdx := len(f.contentHits) - 1
 	// bps는 100Kbps보다 크다고 가정
@@ -174,25 +187,27 @@ type AddDeleter interface {
 
 // Storage :
 type Storage struct {
-	fileInfos  *data.FileInfos
-	hitRanker  *HitRanker
-	contents   map[int]struct{}
-	curSize    int64
-	limitSize  int64
-	pushedT    time.Time
-	pushPeriod time.Duration
-	pushDelayN int // push 배포 시간 = pushPeriod * pushDelayN
-	pushingQ   []int
-	dawnPushN  int // 03 ~ 09시 push할 컨텐츠 수 배수
-	deliverP   *deliverProcessor
+	fileInfos    *data.FileInfos
+	hitRanker    *HitRanker
+	contents     map[int]struct{}
+	curSize      int64
+	limitSize    int64
+	pushedT      time.Time
+	pushPeriod   time.Duration
+	pushDelayN   int // push 배포 시간 = pushPeriod * pushDelayN
+	pushingQ     []int
+	dawnPushN    int // 03 ~ 09시 push할 컨텐츠 수 배수
+	deliverP     *deliverProcessor
+	useSemiSetup bool
 }
 
 // NewStorage :
 func NewStorage(statDuration, shiftPeriod, pushPeriod time.Duration,
-	pushDelayN, dawnPushN int, limitSize int64, fi *data.FileInfos, initContents []string, events []*data.DeliverEvent) *Storage {
+	pushDelayN, dawnPushN int, limitSize int64, fi *data.FileInfos, initContents []string,
+	events []*data.DeliverEvent, useSemiSetup bool) *Storage {
 	s := &Storage{
 		fileInfos:  fi,
-		hitRanker:  NewHitRanker(statDuration, shiftPeriod, fi),
+		hitRanker:  NewHitRanker(statDuration, shiftPeriod, fi, useSemiSetup),
 		contents:   make(map[int]struct{}),
 		limitSize:  limitSize,
 		pushPeriod: pushPeriod,

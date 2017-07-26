@@ -57,7 +57,8 @@ func TestHitRanker(t *testing.T) {
 
 	statDuration := 24 * time.Hour
 	shiftPeriod := 1 * time.Hour
-	dc := NewHitRanker(statDuration, shiftPeriod, fi)
+	useSemiSetup := false
+	dc := NewHitRanker(statDuration, shiftPeriod, fi, useSemiSetup)
 
 	eventFn := func(file, strTime, sid string) {
 		evt := &data.SessionEvent{
@@ -145,13 +146,14 @@ func TestStorage_DeliverProcessor(t *testing.T) {
 	statDuration := 24 * time.Hour
 	shiftPeriod := 1 * time.Hour
 	pushPeriod := 10000 * time.Hour // no push
+	useSemiSetup := false
 	GB := int64(1024 * 1024 * 1024)
 
 	adsFile := "ads1.mpg"
 	evts := []*data.DeliverEvent{
 		&data.DeliverEvent{Time: StrToTime("2017-01-01 00:01:00"), FileName: adsFile},
 	}
-	st := NewStorage(statDuration, shiftPeriod, pushPeriod, 1, 1, 10*GB, fi, nil, evts)
+	st := NewStorage(statDuration, shiftPeriod, pushPeriod, 1, 1, 10*GB, fi, nil, evts, useSemiSetup)
 
 	eventFn("2017-01-01 00:00:59", st)
 	if st.Exists(fi.IntName(adsFile)) {
