@@ -20,7 +20,7 @@ func main() {
 	var cfgFile, dbFile, cpuprofile, memprofile, lp, dbAddr, dbName, lbType, hotListUpdatePeriod, bypass, fbPeriod, simulID, start string
 	var statDu, shiftP, pushP, fiFilepath, lbHistory, adsFile string
 	var readEventCount, hotRankLimit, pushDelayN, dawnPushN int
-	var firstBypass bool
+	var firstBypass, useSessionDu bool
 
 	flag.StringVar(&cfgFile, "cfg", "cdn-simul.json", "config file")
 	flag.StringVar(&dbFile, "db", "chunk.db", "event db")
@@ -41,6 +41,7 @@ func main() {
 	flag.StringVar(&fiFilepath, "file-info", "fileinfo.csv", "csv file path contains id,name,size,bps,register-time (filebase)")
 	flag.StringVar(&lbHistory, "lb-history", "", "LB hitcount history file for initial contents (filebase)")
 	flag.StringVar(&adsFile, "ads-csv", "", "ADSAdapter csv file (filebase)")
+	flag.BoolVar(&useSessionDu, "session-duration", false, "add session duration into hit weight (filebase)")
 	flag.StringVar(&bypass, "bypass", "", "text file that has contents list to bypass")
 	flag.BoolVar(&firstBypass, "first-bypass", false, "if true, chunks of first hit session for 24h will be bypassed")
 	flag.StringVar(&fbPeriod, "fb-period", "24h", "first bypass list update period (only used with first-bypass option)")
@@ -160,6 +161,7 @@ func main() {
 		PushDelayN:          pushDelayN,
 		DawnPushN:           dawnPushN,
 		Fileinfos:           fi,
+		UseSessionDuration:  useSessionDu,
 	}
 	if lbHistory != "" {
 		initList, err := data.LoadFromLBHistory(lbHistory)

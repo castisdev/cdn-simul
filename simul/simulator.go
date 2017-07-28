@@ -328,9 +328,10 @@ func (s *Simulator) Run() {
 			endType:        sessionEnd,
 			sid:            ev.SID,
 			filename:       ev.Filename,
+			intFilename:    fn,
 			bps:            ev.Bandwidth,
 			index:          idx,
-			duration:       du,
+			duration:       ev.Ended.Sub(ev.Started),
 			sessionEndTime: ev.Ended,
 		}
 		heap.Push(s.internalEvents, &esEv)
@@ -405,6 +406,7 @@ func (s *Simulator) processEventsUntil(ti time.Time, events *eventHeap, lb lb.Lo
 				FileName:    endEv.filename,
 				IntFileName: endEv.intFilename,
 				Bps:         int64(endEv.bps),
+				Duration:    endEv.duration,
 			}
 			err = lb.EndSession(&evt)
 			if err != nil {
@@ -433,6 +435,7 @@ type LBOption struct {
 	Fileinfos           *data.FileInfos
 	InitContents        []string
 	DeliverEvent        []*data.DeliverEvent
+	UseSessionDuration  bool
 }
 
 // NewLoadBalancer :
@@ -442,7 +445,7 @@ func NewLoadBalancer(opt LBOption) (lb.LoadBalancer, error) {
 		return lb.NewLegacyLB(opt.Cfg, &lb.SameHashingWeight{})
 	case "filebase":
 		st := lb.NewStorage(opt.StatDuration, opt.ShiftPeriod, opt.PushPeriod, opt.PushDelayN, opt.DawnPushN,
-			opt.Cfg.VODs[0].StorageSize, opt.Fileinfos, opt.InitContents, opt.DeliverEvent)
+			opt.Cfg.VODs[0].StorageSize, opt.Fileinfos, opt.InitContents, opt.DeliverEvent, opt.UseSessionDuration)
 		return lb.NewFilebaseLB(opt.Cfg, lb.NewFileBase(st))
 	}
 	s := NewVODSelector(opt.LBType, opt.HotListUpdatePeriod, opt.HotRankLimit)

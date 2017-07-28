@@ -20,6 +20,7 @@ var ErrFileNotFound = errors.New("file not found")
 type VODSelector interface {
 	VODSelect(evt *data.SessionEvent, lb LoadBalancer) (vod.Key, error)
 	Init(cfg data.Config) error
+	EndSession(evt *data.SessionEvent)
 }
 
 // SameHashingWeight :
@@ -45,6 +46,10 @@ func (s *SameHashingWeight) Init(cfg data.Config) error {
 	fmt.Println("same hashing weight")
 	s.hash = hash
 	return nil
+}
+
+// EndSession :
+func (s *SameHashingWeight) EndSession(evt *data.SessionEvent) {
 }
 
 // SelectAvailableFirst :
@@ -203,6 +208,10 @@ func (s *HighLowGroup) VODSelect(evt *data.SessionEvent, lb LoadBalancer) (vod.K
 	return SelectAvailableFirst(evt, lb, vodKeys)
 }
 
+// EndSession :
+func (s *HighLowGroup) EndSession(evt *data.SessionEvent) {
+}
+
 type contentHit struct {
 	filename int
 	hit      int64
@@ -280,11 +289,16 @@ func (s *FileBase) Init(cfg data.Config) error {
 
 // VODSelect :
 func (s *FileBase) VODSelect(evt *data.SessionEvent, lb LoadBalancer) (vod.Key, error) {
-	if err := s.storage.Update(evt); err != nil {
+	if err := s.storage.UpdateStart(evt); err != nil {
 		return "", err
 	}
 	if s.storage.Exists(evt.IntFileName) {
 		return vod.Key(s.vodID), nil
 	}
 	return "", ErrFileNotFound
+}
+
+// EndSession :
+func (s *FileBase) EndSession(evt *data.SessionEvent) {
+	s.storage.UpdateEnd(evt)
 }

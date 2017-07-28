@@ -73,6 +73,7 @@ func (lb *FilebaseLB) StartSession(evt *data.SessionEvent) error {
 
 // EndSession :
 func (lb *FilebaseLB) EndSession(evt *data.SessionEvent) error {
+	lb.selector.EndSession(evt)
 	key, ok := lb.vodSessionMap[evt.SessionID]
 	if ok {
 		err := lb.VODs[key].EndSession(evt)

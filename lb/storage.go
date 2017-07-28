@@ -23,20 +23,22 @@ func (chs hitRegTSorter) Less(i, j int) bool {
 
 // HitRanker :
 type HitRanker struct {
-	fileInfos   *data.FileInfos
-	shiftPeriod time.Duration
-	shiftT      time.Time
-	contentHits []map[int]int64 // slot(shift 시간)별 content hit 관리
-	curT        time.Time
+	fileInfos          *data.FileInfos
+	shiftPeriod        time.Duration
+	shiftT             time.Time
+	contentHits        []map[int]int64 // slot(shift 시간)별 content hit 관리
+	curT               time.Time
+	useSessionDuration bool
 }
 
 // NewHitRanker :
-func NewHitRanker(statDuration, shiftPeriod time.Duration, fi *data.FileInfos) *HitRanker {
+func NewHitRanker(statDuration, shiftPeriod time.Duration, fi *data.FileInfos, useSessionDuration bool) *HitRanker {
 	hitSlotSize := int(statDuration.Minutes() / shiftPeriod.Minutes())
 	f := &HitRanker{
-		fileInfos:   fi,
-		shiftPeriod: shiftPeriod,
-		contentHits: make([]map[int]int64, hitSlotSize),
+		fileInfos:          fi,
+		shiftPeriod:        shiftPeriod,
+		contentHits:        make([]map[int]int64, hitSlotSize),
+		useSessionDuration: useSessionDuration,
 	}
 	for i := 0; i < hitSlotSize; i++ {
 		f.contentHits[i] = make(map[int]int64)
@@ -44,16 +46,33 @@ func NewHitRanker(statDuration, shiftPeriod time.Duration, fi *data.FileInfos) *
 	return f
 }
 
-// Update :
-func (f *HitRanker) Update(evt *data.SessionEvent) {
+const defaultSessionDu time.Duration = 10 * time.Minute
+
+// UpdateStart :
+func (f *HitRanker) UpdateStart(evt *data.SessionEvent) {
 	if f.shiftT.IsZero() {
 		f.shiftT = evt.Time
 	} else if evt.Time.Sub(f.shiftT) >= f.shiftPeriod {
 		f.shift(evt.Time)
 		f.shiftT = evt.Time
 	}
-	f.updateHit(evt)
+
+	curIdx := len(f.contentHits) - 1
+	if f.useSessionDuration {
+		f.contentHits[curIdx][evt.IntFileName] += f.hitWeight(evt) * int64(evt.Duration.Seconds())
+	} else {
+		f.contentHits[curIdx][evt.IntFileName] += f.hitWeight(evt)
+	}
 	f.curT = evt.Time
+}
+
+// UpdateEnd :
+func (f *HitRanker) UpdateEnd(evt *data.SessionEvent) {
+}
+
+func (f *HitRanker) hitWeight(evt *data.SessionEvent) int64 {
+	// bps는 100Kbps보다 크다고 가정
+	return int64(evt.Bps / 100000)
 }
 
 // Deletable :
@@ -134,12 +153,6 @@ func (f *HitRanker) Addable(contents map[int]struct{}, storageSize int64, exclud
 	return
 }
 
-func (f *HitRanker) updateHit(evt *data.SessionEvent) {
-	curIdx := len(f.contentHits) - 1
-	// bps는 100Kbps보다 크다고 가정
-	f.contentHits[curIdx][evt.IntFileName] += int64(evt.Bps / 100000)
-}
-
 func (f *HitRanker) hit(fname int) int64 {
 	sum := int64(0)
 	for i := 0; i < len(f.contentHits); i++ {
@@ -189,10 +202,11 @@ type Storage struct {
 
 // NewStorage :
 func NewStorage(statDuration, shiftPeriod, pushPeriod time.Duration,
-	pushDelayN, dawnPushN int, limitSize int64, fi *data.FileInfos, initContents []string, events []*data.DeliverEvent) *Storage {
+	pushDelayN, dawnPushN int, limitSize int64, fi *data.FileInfos,
+	initContents []string, events []*data.DeliverEvent, useSessionDuration bool) *Storage {
 	s := &Storage{
 		fileInfos:  fi,
-		hitRanker:  NewHitRanker(statDuration, shiftPeriod, fi),
+		hitRanker:  NewHitRanker(statDuration, shiftPeriod, fi, useSessionDuration),
 		contents:   make(map[int]struct{}),
 		limitSize:  limitSize,
 		pushPeriod: pushPeriod,
@@ -222,9 +236,9 @@ func NewStorage(statDuration, shiftPeriod, pushPeriod time.Duration,
 	return s
 }
 
-// Update :
-func (s *Storage) Update(evt *data.SessionEvent) error {
-	s.hitRanker.Update(evt)
+// UpdateStart :
+func (s *Storage) UpdateStart(evt *data.SessionEvent) error {
+	s.hitRanker.UpdateStart(evt)
 
 	if s.pushedT.IsZero() {
 		s.pushedT = evt.Time
@@ -239,6 +253,11 @@ func (s *Storage) Update(evt *data.SessionEvent) error {
 	}
 
 	return nil
+}
+
+// UpdateEnd :
+func (s *Storage) UpdateEnd(evt *data.SessionEvent) {
+	s.hitRanker.UpdateEnd(evt)
 }
 
 // Exists :

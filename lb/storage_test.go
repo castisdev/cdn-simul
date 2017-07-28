@@ -57,7 +57,7 @@ func TestHitRanker(t *testing.T) {
 
 	statDuration := 24 * time.Hour
 	shiftPeriod := 1 * time.Hour
-	dc := NewHitRanker(statDuration, shiftPeriod, fi)
+	dc := NewHitRanker(statDuration, shiftPeriod, fi, false)
 
 	eventFn := func(file, strTime, sid string) {
 		evt := &data.SessionEvent{
@@ -70,7 +70,7 @@ func TestHitRanker(t *testing.T) {
 			Duration:    time.Minute,
 		}
 
-		dc.Update(evt)
+		dc.UpdateStart(evt)
 	}
 
 	deletableFn := func(name string, curContents map[int]struct{}, delSize int64, expected []int) {
@@ -139,7 +139,7 @@ func TestStorage_DeliverProcessor(t *testing.T) {
 			Bps:         6000000,
 			Duration:    time.Minute,
 		}
-		st.Update(evt)
+		st.UpdateStart(evt)
 	}
 
 	statDuration := 24 * time.Hour
@@ -151,7 +151,7 @@ func TestStorage_DeliverProcessor(t *testing.T) {
 	evts := []*data.DeliverEvent{
 		&data.DeliverEvent{Time: StrToTime("2017-01-01 00:01:00"), FileName: adsFile},
 	}
-	st := NewStorage(statDuration, shiftPeriod, pushPeriod, 1, 1, 10*GB, fi, nil, evts)
+	st := NewStorage(statDuration, shiftPeriod, pushPeriod, 1, 1, 10*GB, fi, nil, evts, false)
 
 	eventFn("2017-01-01 00:00:59", st)
 	if st.Exists(fi.IntName(adsFile)) {
