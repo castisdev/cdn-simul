@@ -4,12 +4,15 @@ import (
 	"bufio"
 	"flag"
 	"fmt"
+	"io/ioutil"
 	"log"
 	"os"
 	"path"
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"github.com/castisdev/cdn-simul/client-ip"
 
 	"github.com/castisdev/cdn-simul/loginfo"
 )
@@ -19,7 +22,20 @@ func main() {
 	odir := flag.String("odir", "filtered", "source directory")
 	isCenter := flag.Bool("center", false, "center glb log")
 	loc := flag.String("loc", "GB", "location name, (GB | NIC)")
+	ipCsv := flag.String("ip-csv", "", "client ip list csv file")
 	flag.Parse()
+
+	var ipChecker *clientip.Checker
+	if *ipCsv != "" {
+		b, err := ioutil.ReadFile(*ipCsv)
+		if err != nil {
+			log.Fatal(err)
+		}
+		ipChecker, err = clientip.NewChecker(strings.NewReader(string(b)))
+		if err != nil {
+			log.Fatal(err)
+		}
+	}
 
 	os.MkdirAll(*odir, 0777)
 	files := loginfo.ListLogFiles(*sdir, "GLB")
@@ -31,13 +47,13 @@ func main() {
 	}
 	sidMap := map[string]struct{}{}
 	for _, lfi := range files {
-		doOneFile(lfi, *odir, *isCenter, dongCodes, sidMap)
+		doOneFile(lfi, *odir, *isCenter, dongCodes, ipChecker, sidMap)
 	}
 }
 
 var dateLayout = "2006-01-02"
 
-func doOneFile(lfi loginfo.LogFileInfo, odir string, isCenter bool, dongCodes []string, sidMap map[string]struct{}) {
+func doOneFile(lfi loginfo.LogFileInfo, odir string, isCenter bool, dongCodes []string, ipChecker *clientip.Checker, sidMap map[string]struct{}) {
 	if isCenter {
 		dir := filepath.Dir(lfi.Fpath)
 		dir = filepath.Dir(dir)
@@ -100,6 +116,13 @@ func doOneFile(lfi loginfo.LogFileInfo, odir string, isCenter bool, dongCodes []
 				strs2 := strings.FieldsFunc(logLine[idx:], sepFunc)
 				sid := strs2[1]
 
+				idx = strings.Index(logLine, "ClientIP")
+				if idx == -1 {
+					continue
+				}
+				strs2 = strings.FieldsFunc(logLine[idx:], sepFunc)
+				cip := strs2[1]
+
 				idx = strings.Index(logLine, "RequestURL")
 				if idx == -1 {
 					continue
@@ -115,6 +138,7 @@ func doOneFile(lfi loginfo.LogFileInfo, odir string, isCenter bool, dongCodes []
 				if len(strs2) < 4 {
 					continue
 				}
+
 				dongCode := strs2[3]
 
 				found := false
@@ -126,7 +150,11 @@ func doOneFile(lfi loginfo.LogFileInfo, odir string, isCenter bool, dongCodes []
 				}
 
 				if found == false {
-					continue
+					if ipChecker != nil && ipChecker.Check(cip) == false {
+						continue
+					} else {
+						fmt.Printf("ip check ok %v\n", line)
+					}
 				}
 
 				sidMap[sid] = struct{}{}
