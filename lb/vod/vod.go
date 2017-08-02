@@ -14,9 +14,16 @@ type VOD struct {
 	CurSessionCount   int64
 	LimitSessionCount int64
 	TotalSessionCount int64
+	HitSessionCount   int64
 	CurBps            int64
 	LimitBps          int64
 	TotalBps          int64
+}
+
+// HitFail :
+func (v *VOD) HitFail() {
+	// hit fail되더라도 session count 증가
+	v.TotalSessionCount++
 }
 
 // StartSession :
@@ -29,6 +36,8 @@ func (v *VOD) StartSession(evt *data.SessionEvent) error {
 	}
 	v.CurSessionCount++
 	v.CurBps += evt.Bps
+	v.TotalSessionCount++
+	v.HitSessionCount++
 	return nil
 }
 

@@ -58,6 +58,11 @@ func (lb *FilebaseLB) StartSession(evt *data.SessionEvent) error {
 	k, err := lb.selector.VODSelect(evt, lb)
 	if err == ErrFileNotFound {
 		// file 없으면 StartChunk 시 cache miss 처리
+		for _, v := range lb.VODs {
+			// 하나의 VOD만 있다고 가정
+			v.HitFail()
+			break
+		}
 		return nil
 	} else if err != nil {
 		return fmt.Errorf("failed to select VOD, %v", err)
@@ -117,9 +122,11 @@ func (lb *FilebaseLB) MakeStatus(t time.Time) *status.Status {
 	st.Origin.Bps = lb.OriginBps
 	for k, v := range lb.VODs {
 		st.Vods[k] = &status.VODStatus{
-			VODKey:          string(k),
-			CurBps:          v.CurBps,
-			CurSessionCount: v.CurSessionCount,
+			VODKey:            string(k),
+			CurBps:            v.CurBps,
+			CurSessionCount:   v.CurSessionCount,
+			TotalSessionCount: v.TotalSessionCount,
+			HitSessionCount:   v.HitSessionCount,
 		}
 		st.Caches[k] = &status.CacheStatus{
 			VODKey:         string(k),

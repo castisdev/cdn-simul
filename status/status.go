@@ -22,9 +22,11 @@ type OriginStatus struct {
 
 // VODStatus :
 type VODStatus struct {
-	VODKey          string
-	CurSessionCount int64
-	CurBps          int64
+	VODKey            string
+	CurSessionCount   int64
+	CurBps            int64
+	TotalSessionCount int64
+	HitSessionCount   int64
 }
 
 // CacheStatus :
