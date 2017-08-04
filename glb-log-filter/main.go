@@ -150,10 +150,11 @@ func doOneFile(lfi loginfo.LogFileInfo, odir string, isCenter bool, dongCodes []
 				}
 
 				if found == false {
-					if ipChecker != nil && ipChecker.Check(cip) == false {
+					if ipChecker == nil || ipChecker.Check(cip) == false {
 						continue
-					} else {
-						fmt.Printf("ip check ok %v\n", line)
+					}
+					if ipChecker != nil && ipChecker.Check(cip) {
+						fmt.Printf("client ip in ip list, %v\n", cip)
 					}
 				}
 

@@ -95,9 +95,10 @@ func (w *StdStatusWriter) WriteStatus(ti time.Time, st status.Status, cfg data.C
 		miss := cache.CacheMissCount
 		totalHit += hit
 		totalMiss += miss
-		str += fmt.Sprintf("%s [%15s session(%4v/%4v/%3v%%) bps(%7v/%7v/%3v%%) disk(%8v/%8v/%3v%%) hit(%5v/%5v: %3v %%) origin(%6v)]\n",
+		str += fmt.Sprintf("%s [%15s session(%4v/%4v/%3v%%) session-total(hit %v/%v) bps(%7v/%7v/%3v%%) disk(%8v/%8v/%3v%%) hit(%5v/%5v: %3v %%) origin(%6v)]\n",
 			st.Time.Format(layout),
 			v.VODKey, v.CurSessionCount, vc.LimitSession, int(float64(v.CurSessionCount)*100/float64(vc.LimitSession)),
+			v.HitSessionCount, v.TotalSessionCount,
 			humanize.Bytes(uint64(v.CurBps)), humanize.Bytes(uint64(vc.LimitBps)), int(float64(v.CurBps)*100/float64(vc.LimitBps)),
 			humanize.IBytes(uint64(cache.CurSize)), humanize.IBytes(uint64(vc.StorageSize)), int(float64(cache.CurSize)*100/float64(vc.StorageSize)),
 			hit, hit+miss, hitRateFn(hit, miss),
