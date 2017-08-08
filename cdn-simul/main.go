@@ -18,7 +18,7 @@ import (
 
 func main() {
 	var cfgFile, dbFile, cpuprofile, memprofile, lp, dbAddr, dbName, lbType, hotListUpdatePeriod, bypass, fbPeriod, simulID, start string
-	var statDu, shiftP, pushP, fiFilepath, lbHistory, adsFile string
+	var statDu, shiftP, pushP, fiFilepath, lbHistory, adsFile, purgeFile string
 	var readEventCount, hotRankLimit, pushDelayN, dawnPushN int
 	var firstBypass, useSessionDu bool
 
@@ -41,6 +41,7 @@ func main() {
 	flag.StringVar(&fiFilepath, "file-info", "fileinfo.csv", "csv file path contains id,name,size,bps,register-time (filebase)")
 	flag.StringVar(&lbHistory, "lb-history", "", "LB hitcount history file for initial contents (filebase)")
 	flag.StringVar(&adsFile, "ads-csv", "", "ADSAdapter csv file (filebase)")
+	flag.StringVar(&purgeFile, "purge-csv", "", "purge csv file (filebase)")
 	flag.BoolVar(&useSessionDu, "session-duration", false, "add session duration into hit weight (filebase)")
 	flag.StringVar(&bypass, "bypass", "", "text file that has contents list to bypass")
 	flag.BoolVar(&firstBypass, "first-bypass", false, "if true, chunks of first hit session for 24h will be bypassed")
@@ -176,6 +177,13 @@ func main() {
 			log.Fatal(err)
 		}
 		lbOpt.DeliverEvent = adsEv
+	}
+	if purgeFile != "" {
+		purgeEv, err := data.LoadFromPurgeCsv(purgeFile)
+		if err != nil {
+			log.Fatal(err)
+		}
+		lbOpt.PurgeEvent = purgeEv
 	}
 	alb, err := simul.NewLoadBalancer(lbOpt)
 	if err != nil {

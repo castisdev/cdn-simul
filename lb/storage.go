@@ -198,12 +198,13 @@ type Storage struct {
 	pushingQ   []int
 	dawnPushN  int // 03 ~ 09시 push할 컨텐츠 수 배수
 	deliverP   *deliverProcessor
+	purgeP     *purgeProcessor
 }
 
 // NewStorage :
 func NewStorage(statDuration, shiftPeriod, pushPeriod time.Duration,
 	pushDelayN, dawnPushN int, limitSize int64, fi *data.FileInfos,
-	initContents []string, events []*data.DeliverEvent, useSessionDuration bool) *Storage {
+	initContents []string, delivers []*data.DeliverEvent, purges []*data.PurgeEvent, useSessionDuration bool) *Storage {
 	s := &Storage{
 		fileInfos:  fi,
 		hitRanker:  NewHitRanker(statDuration, shiftPeriod, fi, useSessionDuration),
@@ -216,8 +217,11 @@ func NewStorage(statDuration, shiftPeriod, pushPeriod time.Duration,
 	if dawnPushN <= 0 {
 		s.dawnPushN = 1
 	}
-	if events != nil {
-		s.deliverP = &deliverProcessor{events: events, fileInfos: fi}
+	if delivers != nil {
+		s.deliverP = &deliverProcessor{events: delivers, fileInfos: fi}
+	}
+	if purges != nil {
+		s.purgeP = &purgeProcessor{events: purges, fileInfos: fi}
 	}
 	var empty struct{}
 	var totalSize int64
@@ -250,6 +254,9 @@ func (s *Storage) UpdateStart(evt *data.SessionEvent) error {
 	}
 	if s.deliverP != nil {
 		s.deliverP.process(evt.Time, s)
+	}
+	if s.purgeP != nil {
+		s.purgeP.process(evt.Time, s.contents)
 	}
 
 	return nil
@@ -330,7 +337,7 @@ func (s *Storage) pushOne() error {
 	}
 
 	s.pushStart(add)
-	fmt.Printf("add start %s, rank[%d]\n", s.fileInfos.Info(add).File, rank)
+	fmt.Printf("add start %s, rank[%d], contentsCount[%d]\n", s.fileInfos.Info(add).File, rank, len(s.contents))
 
 	return nil
 }
@@ -350,10 +357,37 @@ func (p *deliverProcessor) process(t time.Time, adder AddDeleter) error {
 		if p.fileInfos.Exists(ev.FileName) == false {
 			GB := int64(1024 * 1024 * 1024)
 			p.fileInfos.AddOne(ev.FileName, 2*GB, ev.Time)
+			fmt.Printf("add %s unknown filesize (deliver event)\n", ev.FileName)
+		} else {
+			fmt.Printf("add %s (deliver event)\n", ev.FileName)
 		}
 		f := p.fileInfos.IntName(ev.FileName)
 		adder.Delete(p.fileInfos.Info(f).Size)
 		adder.Add(f)
+		p.curIdx++
+		if p.curIdx >= len(p.events) {
+			return nil
+		}
+	}
+}
+
+type purgeProcessor struct {
+	events    []*data.PurgeEvent
+	curIdx    int
+	fileInfos *data.FileInfos
+}
+
+func (p *purgeProcessor) process(t time.Time, contents map[int]struct{}) error {
+	for {
+		if p.curIdx >= len(p.events) || p.events[p.curIdx].Time.Sub(t) > 0 {
+			return nil
+		}
+		ev := p.events[p.curIdx]
+		if p.fileInfos.Exists(ev.FileName) {
+			f := p.fileInfos.IntName(ev.FileName)
+			delete(contents, f)
+			fmt.Printf("deleted %s (purge event)\n", ev.FileName)
+		}
 		p.curIdx++
 		if p.curIdx >= len(p.events) {
 			return nil

@@ -152,6 +152,7 @@ func strToTime(str string) time.Time {
 
 // LoadFromADSAdapterCsv :
 // adsadapter.csv format : [deliver-end-time,filename]
+// gen-normal-adsadapter-csv.sh, gen-holdback0-adsadapter-csv.sh
 func LoadFromADSAdapterCsv(filepath string) ([]*DeliverEvent, error) {
 	b, err := ioutil.ReadFile(filepath)
 	if err != nil {
@@ -167,6 +168,29 @@ func LoadFromADSAdapterCsv(filepath string) ([]*DeliverEvent, error) {
 	var events []*DeliverEvent
 	for _, v := range records {
 		events = append(events, &DeliverEvent{Time: strToTime(v[0] + " " + v[1]), FileName: v[2]})
+	}
+	fmt.Printf("loaded from %v, count(%v)\n", filepath, len(events))
+	return events, nil
+}
+
+// LoadFromPurgeCsv :
+// purge.csv format : [purge-time,filename]
+// grep DeleteFileInClient * -C 2|grep File_Name|awk '{print $2,$10}'|cut -d',' -f3,4,8|sed "s/\"command //"|sed "s/\"//"|sort > purge.csv
+func LoadFromPurgeCsv(filepath string) ([]*PurgeEvent, error) {
+	b, err := ioutil.ReadFile(filepath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read %v, %v", filepath, err)
+	}
+	r := csv.NewReader(strings.NewReader(string(b)))
+
+	records, err := r.ReadAll()
+	if err != nil {
+		return nil, fmt.Errorf("failed to read purge csv file, %v", err)
+	}
+
+	var events []*PurgeEvent
+	for _, v := range records {
+		events = append(events, &PurgeEvent{Time: strToTime(v[0] + " " + v[1]), FileName: v[2]})
 	}
 	fmt.Printf("loaded from %v, count(%v)\n", filepath, len(events))
 	return events, nil

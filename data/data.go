@@ -70,3 +70,9 @@ type DeliverEvent struct {
 	Time     time.Time
 	FileName string
 }
+
+// PurgeEvent :
+type PurgeEvent struct {
+	Time     time.Time
+	FileName string
+}
