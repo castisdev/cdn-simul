@@ -18,7 +18,7 @@ import (
 
 func main() {
 	var cfgFile, dbFile, cpuprofile, memprofile, lp, dbAddr, dbName, lbType, hotListUpdatePeriod, bypass, fbPeriod, simulID, start string
-	var statDu, shiftP, pushP, fiFilepath, lbHistory, adsFile, purgeFile string
+	var statDu, statDuDel, shiftP, pushP, fiFilepath, lbHistory, adsFile, purgeFile string
 	var readEventCount, hotRankLimit, pushDelayN, dawnPushN int
 	var firstBypass, useSessionDu bool
 
@@ -34,6 +34,7 @@ func main() {
 	flag.StringVar(&hotListUpdatePeriod, "hot-period", "24h", "hot list update period (high-low)")
 	flag.IntVar(&hotRankLimit, "hot-rank", 100, "rank limit of hot list, that contents will be served in high group (high-low)")
 	flag.StringVar(&statDu, "stat-range", "24h", "data collect window size (filebase)")
+	flag.StringVar(&statDuDel, "stat-range-del", "24h", "data collect window size for delete (filebase)")
 	flag.StringVar(&shiftP, "shift-period", "1h", "data collect window shift period (filebase)")
 	flag.StringVar(&pushP, "push-period", "5m", "file push period (filebase)")
 	flag.IntVar(&pushDelayN, "push-delay", 2, "file push delay number, (push time = push-period * push-delay) (filebase)")
@@ -125,6 +126,10 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	sdd, err := time.ParseDuration(statDuDel)
+	if err != nil {
+		log.Fatal(err)
+	}
 	sp, err := time.ParseDuration(shiftP)
 	if err != nil {
 		log.Fatal(err)
@@ -157,6 +162,7 @@ func main() {
 		HotListUpdatePeriod: hlup,
 		HotRankLimit:        hotRankLimit,
 		StatDuration:        sd,
+		StatDurationForDel:  sdd,
 		ShiftPeriod:         sp,
 		PushPeriod:          pp,
 		PushDelayN:          pushDelayN,

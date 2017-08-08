@@ -187,22 +187,23 @@ type AddDeleter interface {
 
 // Storage :
 type Storage struct {
-	fileInfos  *data.FileInfos
-	hitRanker  *HitRanker
-	contents   map[int]struct{}
-	curSize    int64
-	limitSize  int64
-	pushedT    time.Time
-	pushPeriod time.Duration
-	pushDelayN int // push 배포 시간 = pushPeriod * pushDelayN
-	pushingQ   []int
-	dawnPushN  int // 03 ~ 09시 push할 컨텐츠 수 배수
-	deliverP   *deliverProcessor
-	purgeP     *purgeProcessor
+	fileInfos       *data.FileInfos
+	hitRanker       *HitRanker
+	hitRankerForDel *HitRanker
+	contents        map[int]struct{}
+	curSize         int64
+	limitSize       int64
+	pushedT         time.Time
+	pushPeriod      time.Duration
+	pushDelayN      int // push 배포 시간 = pushPeriod * pushDelayN
+	pushingQ        []int
+	dawnPushN       int // 03 ~ 09시 push할 컨텐츠 수 배수
+	deliverP        *deliverProcessor
+	purgeP          *purgeProcessor
 }
 
 // NewStorage :
-func NewStorage(statDuration, shiftPeriod, pushPeriod time.Duration,
+func NewStorage(statDuration, statDurationForDel, shiftPeriod, pushPeriod time.Duration,
 	pushDelayN, dawnPushN int, limitSize int64, fi *data.FileInfos,
 	initContents []string, delivers []*data.DeliverEvent, purges []*data.PurgeEvent, useSessionDuration bool) *Storage {
 	s := &Storage{
@@ -223,6 +224,9 @@ func NewStorage(statDuration, shiftPeriod, pushPeriod time.Duration,
 	if purges != nil {
 		s.purgeP = &purgeProcessor{events: purges, fileInfos: fi}
 	}
+	if statDuration != statDurationForDel && statDurationForDel > 0 {
+		s.hitRankerForDel = NewHitRanker(statDurationForDel, shiftPeriod, fi, useSessionDuration)
+	}
 	var empty struct{}
 	var totalSize int64
 	for _, v := range initContents {
@@ -237,12 +241,17 @@ func NewStorage(statDuration, shiftPeriod, pushPeriod time.Duration,
 		s.contents[fi.IntName(v)] = empty
 	}
 	s.curSize = totalSize
+	fmt.Printf("new storage statDuration(%v) statDurationForDel(%v) shiftPeriod(%v) useSessionDuration(%v)\n",
+		statDuration, statDurationForDel, shiftPeriod, useSessionDuration)
 	return s
 }
 
 // UpdateStart :
 func (s *Storage) UpdateStart(evt *data.SessionEvent) error {
 	s.hitRanker.UpdateStart(evt)
+	if s.hitRankerForDel != nil {
+		s.hitRankerForDel.UpdateStart(evt)
+	}
 
 	if s.pushedT.IsZero() {
 		s.pushedT = evt.Time
@@ -265,6 +274,9 @@ func (s *Storage) UpdateStart(evt *data.SessionEvent) error {
 // UpdateEnd :
 func (s *Storage) UpdateEnd(evt *data.SessionEvent) {
 	s.hitRanker.UpdateEnd(evt)
+	if s.hitRankerForDel != nil {
+		s.hitRankerForDel.UpdateEnd(evt)
+	}
 }
 
 // Exists :
@@ -283,7 +295,12 @@ func (s *Storage) Add(fname int) {
 
 // Delete :
 func (s *Storage) Delete(minDelSize int64) {
-	del := s.hitRanker.Deletable(s.contents, minDelSize)
+	var del []int
+	if s.hitRankerForDel != nil {
+		del = s.hitRankerForDel.Deletable(s.contents, minDelSize)
+	} else {
+		del = s.hitRanker.Deletable(s.contents, minDelSize)
+	}
 	for _, v := range del {
 		delete(s.contents, v)
 		s.curSize -= s.fileInfos.Info(v).Size

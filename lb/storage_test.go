@@ -154,7 +154,7 @@ func TestStorage_DeliverPurgeProcessor(t *testing.T) {
 	purges := []*data.PurgeEvent{
 		&data.PurgeEvent{Time: StrToTime("2017-01-01 00:02:00"), FileName: adsFile},
 	}
-	st := NewStorage(statDuration, shiftPeriod, pushPeriod, 1, 1, 10*GB, fi, nil, delivers, purges, false)
+	st := NewStorage(statDuration, statDuration, shiftPeriod, pushPeriod, 1, 1, 10*GB, fi, nil, delivers, purges, false)
 
 	eventFn("2017-01-01 00:00:59", st)
 	if st.Exists(fi.IntName(adsFile)) {
