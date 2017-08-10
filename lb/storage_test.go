@@ -10,18 +10,6 @@ import (
 	"github.com/castisdev/cdn-simul/data"
 )
 
-var layout = "2006-01-02 15:04:05"
-
-// StrToTime :
-func StrToTime(str string) time.Time {
-	loc, _ := time.LoadLocation("Local")
-	t, err := time.ParseInLocation(layout, str, loc)
-	if err != nil {
-		log.Fatal(err)
-	}
-	return t
-}
-
 func TestHitRanker(t *testing.T) {
 
 	str := `
@@ -154,7 +142,7 @@ func TestStorage_DeliverPurgeProcessor(t *testing.T) {
 	purges := []*data.PurgeEvent{
 		&data.PurgeEvent{Time: StrToTime("2017-01-01 00:02:00"), FileName: adsFile},
 	}
-	st := NewStorage(statDuration, statDuration, shiftPeriod, pushPeriod, 1, 1, 10*GB, fi, nil, delivers, purges, false)
+	st := NewStorage(statDuration, statDuration, shiftPeriod, pushPeriod, 1, 1, 10*GB, fi, nil, delivers, purges, false, false)
 
 	eventFn("2017-01-01 00:00:59", st)
 	if st.Exists(fi.IntName(adsFile)) {

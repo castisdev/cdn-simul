@@ -3,6 +3,7 @@ package lb
 import (
 	"errors"
 	"fmt"
+	"log"
 	"sort"
 	"time"
 
@@ -19,6 +20,16 @@ func (chs hitRegTSorter) Swap(i, j int) {
 }
 func (chs hitRegTSorter) Less(i, j int) bool {
 	return chs[i].hit > chs[j].hit || (chs[i].hit == chs[j].hit && chs[i].regT.After(chs[j].regT))
+}
+
+// Ranker :
+type Ranker interface {
+	UpdateStart(evt *data.SessionEvent)
+	UpdateEnd(evt *data.SessionEvent)
+	Addable(contents map[int]struct{}, storageSize int64, exclude []int) (id, rank int, err error)
+	Deletable(contents map[int]struct{}, minDelSize int64) []int
+	Hit(fname int) int64
+	HitCount(fname int) int64
 }
 
 // HitRanker :
@@ -88,7 +99,7 @@ func (f *HitRanker) Deletable(contents map[int]struct{}, minDelSize int64) []int
 		}
 		v := contentHit{
 			filename: k,
-			hit:      f.hit(k),
+			hit:      f.Hit(k),
 			filesize: f.fileInfos.Info(k).Size,
 			regT:     f.fileInfos.Info(k).RegisterT,
 		}
@@ -127,7 +138,7 @@ func (f *HitRanker) Addable(contents map[int]struct{}, storageSize int64, exclud
 			}
 			c := contentHit{
 				filename: k,
-				hit:      f.hit(k),
+				hit:      f.Hit(k),
 				filesize: f.fileInfos.Info(k).Size,
 				regT:     f.fileInfos.Info(k).RegisterT,
 			}
@@ -157,7 +168,8 @@ func (f *HitRanker) Addable(contents map[int]struct{}, storageSize int64, exclud
 	return
 }
 
-func (f *HitRanker) hit(fname int) int64 {
+// Hit :
+func (f *HitRanker) Hit(fname int) int64 {
 	sum := int64(0)
 	for i := 0; i < len(f.contentHits); i++ {
 		sum += f.contentHits[i][fname]
@@ -165,7 +177,8 @@ func (f *HitRanker) hit(fname int) int64 {
 	return sum
 }
 
-func (f *HitRanker) hitCount(fname int) int64 {
+// HitCount :
+func (f *HitRanker) HitCount(fname int) int64 {
 	sum := int64(0)
 	for i := 0; i < len(f.contentHitCounts); i++ {
 		sum += f.contentHitCounts[i][fname]
@@ -194,6 +207,80 @@ func (f *HitRanker) shift(t time.Time) {
 	}
 }
 
+// DeleteLruRanker :
+type DeleteLruRanker struct {
+	hitRanker      *HitRanker
+	recentSessionT map[int]time.Time
+}
+
+// NewDeleteLruRanker :
+func NewDeleteLruRanker(statDuration, shiftPeriod time.Duration, fi *data.FileInfos, useSessionDuration bool) *DeleteLruRanker {
+	f := &DeleteLruRanker{
+		hitRanker:      NewHitRanker(statDuration, shiftPeriod, fi, useSessionDuration),
+		recentSessionT: make(map[int]time.Time),
+	}
+	return f
+}
+
+// UpdateStart :
+func (f *DeleteLruRanker) UpdateStart(evt *data.SessionEvent) {
+	f.hitRanker.UpdateStart(evt)
+	f.recentSessionT[evt.IntFileName] = evt.Time
+}
+
+// UpdateEnd :
+func (f *DeleteLruRanker) UpdateEnd(evt *data.SessionEvent) {
+	f.hitRanker.UpdateEnd(evt)
+}
+
+// Deletable :
+func (f *DeleteLruRanker) Deletable(contents map[int]struct{}, minDelSize int64) []int {
+	var list []contentHit
+	for k := range contents {
+		if f.hitRanker.curT.Sub(f.hitRanker.fileInfos.Info(k).RegisterT) < 24*time.Hour {
+			continue
+		}
+		sessT, ok := f.recentSessionT[k]
+		if !ok {
+			sessT = f.hitRanker.fileInfos.Info(k).RegisterT
+		}
+		v := contentHit{
+			filename: k,
+			hit:      f.hitRanker.Hit(k),
+			filesize: f.hitRanker.fileInfos.Info(k).Size,
+			regT:     sessT,
+		}
+		list = append(list, v)
+	}
+	sort.Sort(hitRegTSorter(list))
+
+	var ret []int
+	var totalSize int64
+	for i := len(list) - 1; i >= 0; i-- {
+		if totalSize >= minDelSize {
+			return ret
+		}
+		ret = append(ret, list[i].filename)
+		totalSize += list[i].filesize
+	}
+	return ret
+}
+
+// Addable :
+func (f *DeleteLruRanker) Addable(contents map[int]struct{}, storageSize int64, exclude []int) (id, rank int, err error) {
+	return f.hitRanker.Addable(contents, storageSize, exclude)
+}
+
+// Hit :
+func (f *DeleteLruRanker) Hit(fname int) int64 {
+	return f.hitRanker.Hit(fname)
+}
+
+// HitCount :
+func (f *DeleteLruRanker) HitCount(fname int) int64 {
+	return f.hitRanker.HitCount(fname)
+}
+
 // AddDeleter :
 type AddDeleter interface {
 	Add(fname int)
@@ -203,8 +290,8 @@ type AddDeleter interface {
 // Storage :
 type Storage struct {
 	fileInfos       *data.FileInfos
-	hitRanker       *HitRanker
-	hitRankerForDel *HitRanker
+	hitRanker       Ranker
+	hitRankerForDel Ranker
 	contents        map[int]struct{}
 	curSize         int64
 	limitSize       int64
@@ -220,7 +307,8 @@ type Storage struct {
 // NewStorage :
 func NewStorage(statDuration, statDurationForDel, shiftPeriod, pushPeriod time.Duration,
 	pushDelayN, dawnPushN int, limitSize int64, fi *data.FileInfos,
-	initContents []string, delivers []*data.DeliverEvent, purges []*data.PurgeEvent, useSessionDuration bool) *Storage {
+	initContents []string, delivers []*data.DeliverEvent, purges []*data.PurgeEvent,
+	useSessionDuration, useDeleteLru bool) *Storage {
 	s := &Storage{
 		fileInfos:  fi,
 		hitRanker:  NewHitRanker(statDuration, shiftPeriod, fi, useSessionDuration),
@@ -241,6 +329,9 @@ func NewStorage(statDuration, statDurationForDel, shiftPeriod, pushPeriod time.D
 	}
 	if statDuration != statDurationForDel && statDurationForDel > 0 {
 		s.hitRankerForDel = NewHitRanker(statDurationForDel, shiftPeriod, fi, useSessionDuration)
+	}
+	if useDeleteLru {
+		s.hitRankerForDel = NewDeleteLruRanker(statDurationForDel, shiftPeriod, fi, useSessionDuration)
 	}
 	var empty struct{}
 	var totalSize int64
@@ -306,12 +397,12 @@ func (s *Storage) Add(fname int) {
 	s.contents[fname] = empty
 	s.curSize += s.fileInfos.Info(fname).Size
 	fmt.Printf("added %s hitWeight(%d) hitCount(%d)\n",
-		s.fileInfos.Info(fname).File, s.hitRanker.hit(fname), s.hitRanker.hitCount(fname))
+		s.fileInfos.Info(fname).File, s.hitRanker.Hit(fname), s.hitRanker.HitCount(fname))
 }
 
 // Delete :
 func (s *Storage) Delete(minDelSize int64) {
-	var ranker *HitRanker
+	var ranker Ranker
 	if s.hitRankerForDel != nil {
 		ranker = s.hitRankerForDel
 	} else {
@@ -323,7 +414,7 @@ func (s *Storage) Delete(minDelSize int64) {
 		delete(s.contents, v)
 		s.curSize -= s.fileInfos.Info(v).Size
 		fmt.Printf("deleted %s hitWeight(%d) hitCount(%d)\n",
-			s.fileInfos.Info(v).File, ranker.hit(v), ranker.hitCount(v))
+			s.fileInfos.Info(v).File, ranker.Hit(v), ranker.HitCount(v))
 	}
 }
 
@@ -429,4 +520,16 @@ func (p *purgeProcessor) process(t time.Time, contents map[int]struct{}) error {
 			return nil
 		}
 	}
+}
+
+var layout = "2006-01-02 15:04:05"
+
+// StrToTime :
+func StrToTime(str string) time.Time {
+	loc, _ := time.LoadLocation("Local")
+	t, err := time.ParseInLocation(layout, str, loc)
+	if err != nil {
+		log.Fatal(err)
+	}
+	return t
 }
