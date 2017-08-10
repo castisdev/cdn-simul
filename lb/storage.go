@@ -26,7 +26,8 @@ type HitRanker struct {
 	fileInfos          *data.FileInfos
 	shiftPeriod        time.Duration
 	shiftT             time.Time
-	contentHits        []map[int]int64 // slot(shift 시간)별 content hit 관리
+	contentHits        []map[int]int64 // slot(shift 시간)별 content hit weight 관리
+	contentHitCounts   []map[int]int64 // slot(shift 시간)별 content hit count 관리
 	curT               time.Time
 	useSessionDuration bool
 }
@@ -38,10 +39,12 @@ func NewHitRanker(statDuration, shiftPeriod time.Duration, fi *data.FileInfos, u
 		fileInfos:          fi,
 		shiftPeriod:        shiftPeriod,
 		contentHits:        make([]map[int]int64, hitSlotSize),
+		contentHitCounts:   make([]map[int]int64, hitSlotSize),
 		useSessionDuration: useSessionDuration,
 	}
 	for i := 0; i < hitSlotSize; i++ {
 		f.contentHits[i] = make(map[int]int64)
+		f.contentHitCounts[i] = make(map[int]int64)
 	}
 	return f
 }
@@ -63,6 +66,7 @@ func (f *HitRanker) UpdateStart(evt *data.SessionEvent) {
 	} else {
 		f.contentHits[curIdx][evt.IntFileName] += f.hitWeight(evt)
 	}
+	f.contentHitCounts[curIdx][evt.IntFileName]++
 	f.curT = evt.Time
 }
 
@@ -161,21 +165,32 @@ func (f *HitRanker) hit(fname int) int64 {
 	return sum
 }
 
+func (f *HitRanker) hitCount(fname int) int64 {
+	sum := int64(0)
+	for i := 0; i < len(f.contentHitCounts); i++ {
+		sum += f.contentHitCounts[i][fname]
+	}
+	return sum
+}
+
 func (f *HitRanker) shift(t time.Time) {
 	slotN := len(f.contentHits)
 	shiftN := int(t.Sub(f.shiftT).Minutes() / f.shiftPeriod.Minutes())
 	if shiftN >= slotN {
 		for i := 0; i < slotN; i++ {
 			f.contentHits[i] = make(map[int]int64)
+			f.contentHitCounts[i] = make(map[int]int64)
 		}
 		return
 	}
 
 	for i := 0; i < slotN-shiftN; i++ {
 		f.contentHits[i] = f.contentHits[shiftN+i]
+		f.contentHitCounts[i] = f.contentHitCounts[shiftN+i]
 	}
 	for i := 0; i < shiftN; i++ {
 		f.contentHits[slotN-i-1] = make(map[int]int64)
+		f.contentHitCounts[slotN-i-1] = make(map[int]int64)
 	}
 }
 
@@ -290,21 +305,25 @@ func (s *Storage) Add(fname int) {
 	var empty struct{}
 	s.contents[fname] = empty
 	s.curSize += s.fileInfos.Info(fname).Size
-	fmt.Printf("added %s\n", s.fileInfos.Info(fname).File)
+	fmt.Printf("added %s hitWeight(%d) hitCount(%d)\n",
+		s.fileInfos.Info(fname).File, s.hitRanker.hit(fname), s.hitRanker.hitCount(fname))
 }
 
 // Delete :
 func (s *Storage) Delete(minDelSize int64) {
-	var del []int
+	var ranker *HitRanker
 	if s.hitRankerForDel != nil {
-		del = s.hitRankerForDel.Deletable(s.contents, minDelSize)
+		ranker = s.hitRankerForDel
 	} else {
-		del = s.hitRanker.Deletable(s.contents, minDelSize)
+		ranker = s.hitRanker
 	}
+	del := ranker.Deletable(s.contents, minDelSize)
+
 	for _, v := range del {
 		delete(s.contents, v)
 		s.curSize -= s.fileInfos.Info(v).Size
-		fmt.Printf("deleted %s\n", s.fileInfos.Info(v).File)
+		fmt.Printf("deleted %s hitWeight(%d) hitCount(%d)\n",
+			s.fileInfos.Info(v).File, ranker.hit(v), ranker.hitCount(v))
 	}
 }
 
