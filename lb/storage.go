@@ -238,6 +238,10 @@ func (f *DeleteLruRanker) Deletable(contents map[int]struct{}, minDelSize int64)
 	var list []contentHit
 	for k := range contents {
 		if f.hitRanker.curT.Sub(f.hitRanker.fileInfos.Info(k).RegisterT) < 24*time.Hour {
+			if _, ok := f.recentSessionT[k]; !ok {
+				// 초기 배포의 최근 세션시간을 오래전 임의의 시간으로 설정하여 hit가 없으면 바로 삭제될 수 있도록 처리
+				f.recentSessionT[k] = StrToTime("2001-01-01 00:00:00")
+			}
 			continue
 		}
 		sessT, ok := f.recentSessionT[k]
@@ -285,6 +289,7 @@ func (f *DeleteLruRanker) HitCount(fname int) int64 {
 type AddDeleter interface {
 	Add(fname int)
 	Delete(minDelSize int64)
+	Exists(fname int) bool
 }
 
 // Storage :
@@ -481,16 +486,20 @@ func (p *deliverProcessor) process(t time.Time, adder AddDeleter) error {
 			return nil
 		}
 		ev := p.events[p.curIdx]
+
 		if p.fileInfos.Exists(ev.FileName) == false {
-			GB := int64(1024 * 1024 * 1024)
-			p.fileInfos.AddOne(ev.FileName, 2*GB, ev.Time)
-			fmt.Printf("add %s unknown filesize (deliver event)\n", ev.FileName)
+			p.fileInfos.AddOne(ev.FileName, ev.FileSize, ev.Time)
+			fmt.Printf("add %s not exists in flm (deliver event)\n", ev.FileName)
 		} else {
 			fmt.Printf("add %s (deliver event)\n", ev.FileName)
 		}
 		f := p.fileInfos.IntName(ev.FileName)
-		adder.Delete(p.fileInfos.Info(f).Size)
-		adder.Add(f)
+		if adder.Exists(f) {
+			fmt.Printf("already exists %s, no deliver\n", ev.FileName)
+		} else {
+			adder.Delete(p.fileInfos.Info(f).Size)
+			adder.Add(f)
+		}
 		p.curIdx++
 		if p.curIdx >= len(p.events) {
 			return nil

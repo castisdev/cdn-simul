@@ -69,6 +69,7 @@ func (s ChunkEvent) String() string {
 type DeliverEvent struct {
 	Time     time.Time
 	FileName string
+	FileSize int64
 }
 
 // PurgeEvent :

@@ -151,8 +151,10 @@ func strToTime(str string) time.Time {
 }
 
 // LoadFromADSAdapterCsv :
-// adsadapter.csv format : [deliver-end-time,filename]
-// gen-normal-adsadapter-csv.sh, gen-holdback0-adsadapter-csv.sh
+// adsadapter.csv format : [deliver-end-time, filename, filesize]
+// csv 만들기
+//   * adsadapter-log 사용 => adsAdapter.csv
+//   * egrep " 49, | 50, | 51, " adsAdapter.csv > adsadapter.csv (노드수가 49/50/51인 것만 선택)
 func LoadFromADSAdapterCsv(filepath string) ([]*DeliverEvent, error) {
 	b, err := ioutil.ReadFile(filepath)
 	if err != nil {
@@ -167,7 +169,16 @@ func LoadFromADSAdapterCsv(filepath string) ([]*DeliverEvent, error) {
 
 	var events []*DeliverEvent
 	for _, v := range records {
-		events = append(events, &DeliverEvent{Time: strToTime(v[0] + " " + v[1]), FileName: v[2]})
+		sz, err := strconv.ParseInt(strings.Trim(v[2], " "), 10, 64)
+		if err != nil {
+			log.Fatalf("failed to parse %v, %v", filepath, v)
+		}
+		d := &DeliverEvent{
+			Time:     strToTime(strings.Trim(v[0], " ")),
+			FileName: strings.Trim(v[1], " "),
+			FileSize: sz,
+		}
+		events = append(events, d)
 	}
 	fmt.Printf("loaded from %v, count(%v)\n", filepath, len(events))
 	return events, nil
