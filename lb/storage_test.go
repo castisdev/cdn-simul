@@ -45,7 +45,7 @@ func TestHitRanker(t *testing.T) {
 
 	statDuration := 24 * time.Hour
 	shiftPeriod := 1 * time.Hour
-	dc := NewHitRanker(statDuration, shiftPeriod, fi, false)
+	dc := NewHitRanker(statDuration, shiftPeriod, fi, false, false)
 
 	eventFn := func(file, strTime, sid string) {
 		evt := &data.SessionEvent{
@@ -142,7 +142,7 @@ func TestStorage_DeliverPurgeProcessor(t *testing.T) {
 	purges := []*data.PurgeEvent{
 		&data.PurgeEvent{Time: StrToTime("2017-01-01 00:02:00"), FileName: adsFile},
 	}
-	st := NewStorage(statDuration, statDuration, shiftPeriod, pushPeriod, 1, 1, 10*GB, fi, nil, delivers, purges, false, false)
+	st := NewStorage(statDuration, statDuration, shiftPeriod, pushPeriod, 1, 1, 10*GB, fi, nil, delivers, purges, false, false, false)
 
 	eventFn("2017-01-01 00:00:59", st)
 	if st.Exists(fi.IntName(adsFile)) {

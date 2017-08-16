@@ -41,10 +41,11 @@ type HitRanker struct {
 	contentHitCounts   []map[int]int64 // slot(shift 시간)별 content hit count 관리
 	curT               time.Time
 	useSessionDuration bool
+	useFileSize        bool
 }
 
 // NewHitRanker :
-func NewHitRanker(statDuration, shiftPeriod time.Duration, fi *data.FileInfos, useSessionDuration bool) *HitRanker {
+func NewHitRanker(statDuration, shiftPeriod time.Duration, fi *data.FileInfos, useSessionDuration, useFileSize bool) *HitRanker {
 	hitSlotSize := int(statDuration.Minutes() / shiftPeriod.Minutes())
 	f := &HitRanker{
 		fileInfos:          fi,
@@ -52,6 +53,10 @@ func NewHitRanker(statDuration, shiftPeriod time.Duration, fi *data.FileInfos, u
 		contentHits:        make([]map[int]int64, hitSlotSize),
 		contentHitCounts:   make([]map[int]int64, hitSlotSize),
 		useSessionDuration: useSessionDuration,
+		useFileSize:        useFileSize,
+	}
+	if useFileSize {
+		f.useSessionDuration = true
 	}
 	for i := 0; i < hitSlotSize; i++ {
 		f.contentHits[i] = make(map[int]int64)
@@ -72,9 +77,7 @@ func (f *HitRanker) UpdateStart(evt *data.SessionEvent) {
 	}
 
 	curIdx := len(f.contentHits) - 1
-	if f.useSessionDuration {
-		f.contentHits[curIdx][evt.IntFileName] += f.hitWeight(evt) * int64(evt.Duration.Seconds())
-	} else {
+	if f.useSessionDuration == false {
 		f.contentHits[curIdx][evt.IntFileName] += f.hitWeight(evt)
 	}
 	f.contentHitCounts[curIdx][evt.IntFileName]++
@@ -83,6 +86,18 @@ func (f *HitRanker) UpdateStart(evt *data.SessionEvent) {
 
 // UpdateEnd :
 func (f *HitRanker) UpdateEnd(evt *data.SessionEvent) {
+	if f.useSessionDuration {
+		curIdx := len(f.contentHits) - 1
+		if f.useFileSize {
+			sz := int64(evt.FileSize / 102400)
+			if sz == 0 {
+				sz = 1
+			}
+			f.contentHits[curIdx][evt.IntFileName] += int64(f.hitWeight(evt) * int64(evt.Duration.Seconds()) / sz)
+		} else {
+			f.contentHits[curIdx][evt.IntFileName] += f.hitWeight(evt) * int64(evt.Duration.Seconds())
+		}
+	}
 }
 
 func (f *HitRanker) hitWeight(evt *data.SessionEvent) int64 {
@@ -216,7 +231,7 @@ type DeleteLruRanker struct {
 // NewDeleteLruRanker :
 func NewDeleteLruRanker(statDuration, shiftPeriod time.Duration, fi *data.FileInfos, useSessionDuration bool) *DeleteLruRanker {
 	f := &DeleteLruRanker{
-		hitRanker:      NewHitRanker(statDuration, shiftPeriod, fi, useSessionDuration),
+		hitRanker:      NewHitRanker(statDuration, shiftPeriod, fi, useSessionDuration, false),
 		recentSessionT: make(map[int]time.Time),
 	}
 	return f
@@ -313,10 +328,10 @@ type Storage struct {
 func NewStorage(statDuration, statDurationForDel, shiftPeriod, pushPeriod time.Duration,
 	pushDelayN, dawnPushN int, limitSize int64, fi *data.FileInfos,
 	initContents []string, delivers []*data.DeliverEvent, purges []*data.PurgeEvent,
-	useSessionDuration, useDeleteLru bool) *Storage {
+	useSessionDuration, useDeleteLru, useFileSize bool) *Storage {
 	s := &Storage{
 		fileInfos:  fi,
-		hitRanker:  NewHitRanker(statDuration, shiftPeriod, fi, useSessionDuration),
+		hitRanker:  NewHitRanker(statDuration, shiftPeriod, fi, useSessionDuration, useFileSize),
 		contents:   make(map[int]struct{}),
 		limitSize:  limitSize,
 		pushPeriod: pushPeriod,
@@ -333,7 +348,7 @@ func NewStorage(statDuration, statDurationForDel, shiftPeriod, pushPeriod time.D
 		s.purgeP = &purgeProcessor{events: purges, fileInfos: fi}
 	}
 	if statDuration != statDurationForDel && statDurationForDel > 0 {
-		s.hitRankerForDel = NewHitRanker(statDurationForDel, shiftPeriod, fi, useSessionDuration)
+		s.hitRankerForDel = NewHitRanker(statDurationForDel, shiftPeriod, fi, useSessionDuration, useFileSize)
 	}
 	if useDeleteLru {
 		s.hitRankerForDel = NewDeleteLruRanker(statDurationForDel, shiftPeriod, fi, useSessionDuration)
