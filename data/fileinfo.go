@@ -154,7 +154,7 @@ func strToTime(str string) time.Time {
 // adsadapter.csv format : [deliver-end-time, filename, filesize]
 // csv 만들기
 //   * adsadapter-log 사용 => adsAdapter.csv
-//   * egrep " 49, | 50, | 51, " adsAdapter.csv > adsadapter.csv (노드수가 49/50/51인 것만 선택)
+//   * egrep " 49, | 50, | 51, " adsAdapter.csv |cut -d',' -f1,2,3 > adsadapter.csv (노드수가 49/50/51인 것만 선택)
 func LoadFromADSAdapterCsv(filepath string) ([]*DeliverEvent, error) {
 	b, err := ioutil.ReadFile(filepath)
 	if err != nil {

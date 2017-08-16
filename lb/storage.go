@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"math"
 	"sort"
 	"time"
 
@@ -42,10 +43,11 @@ type HitRanker struct {
 	curT               time.Time
 	useSessionDuration bool
 	useFileSize        bool
+	useTimeWeight      bool
 }
 
 // NewHitRanker :
-func NewHitRanker(statDuration, shiftPeriod time.Duration, fi *data.FileInfos, useSessionDuration, useFileSize bool) *HitRanker {
+func NewHitRanker(statDuration, shiftPeriod time.Duration, fi *data.FileInfos, useSessionDuration, useFileSize, useTimeWeight bool) *HitRanker {
 	hitSlotSize := int(statDuration.Minutes() / shiftPeriod.Minutes())
 	f := &HitRanker{
 		fileInfos:          fi,
@@ -54,6 +56,7 @@ func NewHitRanker(statDuration, shiftPeriod time.Duration, fi *data.FileInfos, u
 		contentHitCounts:   make([]map[int]int64, hitSlotSize),
 		useSessionDuration: useSessionDuration,
 		useFileSize:        useFileSize,
+		useTimeWeight:      useTimeWeight,
 	}
 	if useFileSize {
 		f.useSessionDuration = true
@@ -89,7 +92,7 @@ func (f *HitRanker) UpdateEnd(evt *data.SessionEvent) {
 	if f.useSessionDuration {
 		curIdx := len(f.contentHits) - 1
 		if f.useFileSize {
-			sz := int64(evt.FileSize / 102400)
+			sz := int64(f.fileInfos.Info(evt.IntFileName).Size / 102400)
 			if sz == 0 {
 				sz = 1
 			}
@@ -186,8 +189,22 @@ func (f *HitRanker) Addable(contents map[int]struct{}, storageSize int64, exclud
 // Hit :
 func (f *HitRanker) Hit(fname int) int64 {
 	sum := int64(0)
-	for i := 0; i < len(f.contentHits); i++ {
-		sum += f.contentHits[i][fname]
+	slotN := len(f.contentHits)
+	x := 0.9
+	for i := 0; i < slotN; i++ {
+		if f.useTimeWeight {
+			// slot1..slotN 은 시간순
+			// hit-weight = slot1 + slot2 * (x**1) + slot3 * (x**2) ...
+			sum += f.contentHits[i][fname] * int64(math.Pow(float64(x), float64(slotN-i-1)))
+		} else {
+			sum += f.contentHits[i][fname]
+		}
+	}
+	// 입수된지 얼마 안된 컨텐츠의 빈 슬롯은 평균값으로 보정
+	emptySlotN := int64(slotN) - int64(f.curT.Sub(f.fileInfos.Info(fname).RegisterT)/f.shiftPeriod)
+	if emptySlotN > 0 {
+		adjust := (sum * emptySlotN) / (int64(slotN) - emptySlotN)
+		sum += adjust
 	}
 	return sum
 }
@@ -231,7 +248,7 @@ type DeleteLruRanker struct {
 // NewDeleteLruRanker :
 func NewDeleteLruRanker(statDuration, shiftPeriod time.Duration, fi *data.FileInfos, useSessionDuration bool) *DeleteLruRanker {
 	f := &DeleteLruRanker{
-		hitRanker:      NewHitRanker(statDuration, shiftPeriod, fi, useSessionDuration, false),
+		hitRanker:      NewHitRanker(statDuration, shiftPeriod, fi, useSessionDuration, false, false),
 		recentSessionT: make(map[int]time.Time),
 	}
 	return f
@@ -328,10 +345,10 @@ type Storage struct {
 func NewStorage(statDuration, statDurationForDel, shiftPeriod, pushPeriod time.Duration,
 	pushDelayN, dawnPushN int, limitSize int64, fi *data.FileInfos,
 	initContents []string, delivers []*data.DeliverEvent, purges []*data.PurgeEvent,
-	useSessionDuration, useDeleteLru, useFileSize bool) *Storage {
+	useSessionDuration, useDeleteLru, useFileSize, useTimeWeight bool) *Storage {
 	s := &Storage{
 		fileInfos:  fi,
-		hitRanker:  NewHitRanker(statDuration, shiftPeriod, fi, useSessionDuration, useFileSize),
+		hitRanker:  NewHitRanker(statDuration, shiftPeriod, fi, useSessionDuration, useFileSize, useTimeWeight),
 		contents:   make(map[int]struct{}),
 		limitSize:  limitSize,
 		pushPeriod: pushPeriod,
@@ -348,7 +365,7 @@ func NewStorage(statDuration, statDurationForDel, shiftPeriod, pushPeriod time.D
 		s.purgeP = &purgeProcessor{events: purges, fileInfos: fi}
 	}
 	if statDuration != statDurationForDel && statDurationForDel > 0 {
-		s.hitRankerForDel = NewHitRanker(statDurationForDel, shiftPeriod, fi, useSessionDuration, useFileSize)
+		s.hitRankerForDel = NewHitRanker(statDurationForDel, shiftPeriod, fi, useSessionDuration, useFileSize, useTimeWeight)
 	}
 	if useDeleteLru {
 		s.hitRankerForDel = NewDeleteLruRanker(statDurationForDel, shiftPeriod, fi, useSessionDuration)
@@ -367,8 +384,8 @@ func NewStorage(statDuration, statDurationForDel, shiftPeriod, pushPeriod time.D
 		s.contents[fi.IntName(v)] = empty
 	}
 	s.curSize = totalSize
-	fmt.Printf("new storage statDuration(%v) statDurationForDel(%v) shiftPeriod(%v) useSessionDuration(%v)\n",
-		statDuration, statDurationForDel, shiftPeriod, useSessionDuration)
+	fmt.Printf("new storage statDuration(%v) statDurationForDel(%v) shiftPeriod(%v) useSessionDuration(%v) useDeletLru(%v) useFileSize(%v) useTimeWeight(%v)\n",
+		statDuration, statDurationForDel, shiftPeriod, useSessionDuration, useDeleteLru, useFileSize, useTimeWeight)
 	return s
 }
 

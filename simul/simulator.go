@@ -440,6 +440,7 @@ type LBOption struct {
 	UseSessionDuration  bool
 	UseDeleteLru        bool
 	UseFileSize         bool
+	UseTimeWeight       bool
 }
 
 // NewLoadBalancer :
@@ -450,7 +451,7 @@ func NewLoadBalancer(opt LBOption) (lb.LoadBalancer, error) {
 	case "filebase":
 		st := lb.NewStorage(opt.StatDuration, opt.StatDurationForDel, opt.ShiftPeriod, opt.PushPeriod, opt.PushDelayN, opt.DawnPushN,
 			opt.Cfg.VODs[0].StorageSize, opt.Fileinfos, opt.InitContents, opt.DeliverEvent, opt.PurgeEvent,
-			opt.UseSessionDuration, opt.UseDeleteLru, opt.UseFileSize)
+			opt.UseSessionDuration, opt.UseDeleteLru, opt.UseFileSize, opt.UseTimeWeight)
 		return lb.NewFilebaseLB(opt.Cfg, lb.NewFileBase(st))
 	}
 	s := NewVODSelector(opt.LBType, opt.HotListUpdatePeriod, opt.HotRankLimit)
