@@ -92,7 +92,7 @@ func (f *HitRanker) UpdateEnd(evt *data.SessionEvent) {
 	if f.useSessionDuration {
 		curIdx := len(f.contentHits) - 1
 		if f.useFileSize {
-			sz := int64(f.fileInfos.Info(evt.IntFileName).Size / 102400)
+			sz := f.fileInfos.Info(evt.IntFileName).Size
 			if sz == 0 {
 				sz = 1
 			}
@@ -104,6 +104,9 @@ func (f *HitRanker) UpdateEnd(evt *data.SessionEvent) {
 }
 
 func (f *HitRanker) hitWeight(evt *data.SessionEvent) int64 {
+	if f.useFileSize {
+		return evt.Bps
+	}
 	// bps는 100Kbps보다 크다고 가정
 	return int64(evt.Bps / 100000)
 }
@@ -202,7 +205,7 @@ func (f *HitRanker) Hit(fname int) int64 {
 	}
 	// 입수된지 얼마 안된 컨텐츠의 빈 슬롯은 평균값으로 보정
 	emptySlotN := int64(slotN) - int64(f.curT.Sub(f.fileInfos.Info(fname).RegisterT)/f.shiftPeriod)
-	if emptySlotN > 0 {
+	if 0 < emptySlotN && emptySlotN < int64(slotN) {
 		adjust := (sum * emptySlotN) / (int64(slotN) - emptySlotN)
 		sum += adjust
 	}
