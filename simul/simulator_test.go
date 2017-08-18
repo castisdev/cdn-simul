@@ -29,31 +29,6 @@ func completedPush() (int, error) {
 }
 
 func TestSimulator_Run_Simple(t *testing.T) {
-	{
-		v, err := completedPush()
-		fmt.Printf("completed %v %v\n", v, err)
-		pushStart(1)
-	}
-
-	{
-		v, err := completedPush()
-		fmt.Printf("completed %v %v\n", v, err)
-		pushStart(2)
-	}
-
-	{
-		v, err := completedPush()
-		fmt.Printf("completed %v %v\n", v, err)
-		pushStart(3)
-	}
-
-	{
-		v, err := completedPush()
-		fmt.Printf("completed %v %v\n", v, err)
-		pushStart(4)
-	}
-	return
-
 	cfg := data.Config{
 		VODs: []data.VODConfig{data.VODConfig{VodID: "vod1", StorageSize: 1000000000, LimitSession: 10000, LimitBps: 1000000000000}},
 	}

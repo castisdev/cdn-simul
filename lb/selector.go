@@ -134,7 +134,7 @@ type HighLowGroup struct {
 	contentHits     map[int]int64
 	updatedHotListT time.Time
 	updateHotPeriod time.Duration
-	hotList         []contentHit
+	hotList         []HitInfo
 	hotThreshold    int
 }
 
@@ -212,18 +212,7 @@ func (s *HighLowGroup) VODSelect(evt *data.SessionEvent, lb LoadBalancer) (vod.K
 func (s *HighLowGroup) EndSession(evt *data.SessionEvent) {
 }
 
-type contentHit struct {
-	filename int
-	hit      int64
-	filesize int64
-	regT     time.Time
-}
-
-func (c contentHit) String() string {
-	return fmt.Sprintf("%v %v %v %v", c.filename, c.hit, c.filesize, c.regT)
-}
-
-type contentHitSorter []contentHit
+type contentHitSorter []HitInfo
 
 func (chs contentHitSorter) Len() int {
 	return len(chs)
@@ -236,9 +225,9 @@ func (chs contentHitSorter) Less(i, j int) bool {
 }
 
 func (s *HighLowGroup) updateHotList() {
-	var list []contentHit
+	var list []HitInfo
 	for k, v := range s.contentHits {
-		list = append(list, contentHit{filename: k, hit: v})
+		list = append(list, HitInfo{filename: k, hit: v})
 	}
 	sort.Sort(contentHitSorter(list))
 	s.hotList = list
@@ -269,17 +258,17 @@ func (s *HighLowGroup) isHot(file int) bool {
 // FileBase :
 type FileBase struct {
 	vodID   string
-	storage *Storage
+	storage Storage
 }
 
 // NewFileBase :
-func NewFileBase(s *Storage) VODSelector {
+func NewFileBase(s Storage) VODSelector {
 	return &FileBase{storage: s}
 }
 
 // Init :
 func (s *FileBase) Init(cfg data.Config) error {
-	fmt.Printf("filebase: storage:%v\n", s.storage.limitSize)
+	fmt.Printf("filebase: storage:%v\n", s.storage.LimitSize())
 	for _, v := range cfg.VODs {
 		s.vodID = v.VodID
 		break

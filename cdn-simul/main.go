@@ -20,7 +20,7 @@ func main() {
 	var cfgFile, dbFile, cpuprofile, memprofile, lp, dbAddr, dbName, lbType, hotListUpdatePeriod, bypass, fbPeriod, simulID, start string
 	var statDu, statDuDel, shiftP, pushP, fiFilepath, lbHistory, adsFile, purgeFile string
 	var readEventCount, hotRankLimit, pushDelayN, dawnPushN int
-	var firstBypass, useSessionDu, useDeleteLru, useFileSize, useTimeWeight bool
+	var firstBypass, useSessionDu, useDeleteLru, useFileSize, useTimeWeight, useIdeal bool
 
 	flag.StringVar(&cfgFile, "cfg", "cdn-simul.json", "config file")
 	flag.StringVar(&dbFile, "db", "chunk.db", "event db")
@@ -47,6 +47,7 @@ func main() {
 	flag.BoolVar(&useDeleteLru, "delete-lru", false, "delete file using with LRU (filebase)")
 	flag.BoolVar(&useFileSize, "file-size", false, "add file size and session duration into hit weight (filebase)")
 	flag.BoolVar(&useTimeWeight, "time-weight", false, "add time weight into hit weight (filebase)")
+	flag.BoolVar(&useIdeal, "ideal-storage", false, "ideal storage mode (filebase)")
 	flag.StringVar(&bypass, "bypass", "", "text file that has contents list to bypass")
 	flag.BoolVar(&firstBypass, "first-bypass", false, "if true, chunks of first hit session for 24h will be bypassed")
 	flag.StringVar(&fbPeriod, "fb-period", "24h", "first bypass list update period (only used with first-bypass option)")
@@ -175,6 +176,7 @@ func main() {
 		UseDeleteLru:        useDeleteLru,
 		UseFileSize:         useFileSize,
 		UseTimeWeight:       useTimeWeight,
+		UseIdeal:            useIdeal,
 	}
 	if lbHistory != "" {
 		initList, err := data.LoadFromLBHistory(lbHistory)

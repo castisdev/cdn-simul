@@ -117,7 +117,7 @@ func TestHitRanker(t *testing.T) {
 func TestStorage_DeliverPurgeProcessor(t *testing.T) {
 	fi, _ := data.NewEmptyFileInfos()
 
-	eventFn := func(strTime string, st *Storage) {
+	eventFn := func(strTime string, st *FilebaseStorage) {
 		evt := &data.SessionEvent{
 			FileName:    "a.mpg",
 			SessionID:   "sid",
@@ -142,7 +142,7 @@ func TestStorage_DeliverPurgeProcessor(t *testing.T) {
 	purges := []*data.PurgeEvent{
 		&data.PurgeEvent{Time: StrToTime("2017-01-01 00:02:00"), FileName: adsFile},
 	}
-	st := NewStorage(statDuration, statDuration, shiftPeriod, pushPeriod, 1, 1, 10*GB, fi, nil, delivers, purges, false, false, false, false)
+	st := NewFilebaseStorage(statDuration, statDuration, shiftPeriod, pushPeriod, 1, 1, 10*GB, fi, nil, delivers, purges, false, false, false, false)
 
 	eventFn("2017-01-01 00:00:59", st)
 	if st.Exists(fi.IntName(adsFile)) {
@@ -160,4 +160,95 @@ func TestStorage_DeliverPurgeProcessor(t *testing.T) {
 	if st.Exists(fi.IntName(adsFile)) {
 		t.Errorf("%v exists", adsFile)
 	}
+}
+
+func TestNiceStorage(t *testing.T) {
+
+	str := `
+1,a.mpg,6000000,500000000,2016-02-01T00:00:00
+2,b.mpg,6000000,500000000,2016-01-01T00:00:00
+3,c.mpg,6000000,500000000,2015-01-01T00:00:00
+4,d.mpg,6000000,500000000,2014-01-01T00:00:00
+5,e.mpg,6000000,500000000,2013-01-01T00:00:00`
+
+	id := func(file string) int {
+		switch file {
+		case "a.mpg":
+			return 1
+		case "b.mpg":
+			return 2
+		case "c.mpg":
+			return 3
+		case "d.mpg":
+			return 4
+		case "e.mpg":
+			return 5
+		default:
+			log.Fatal("invalid test data")
+		}
+		return 0
+	}
+
+	fi, err := data.NewFileInfos(strings.NewReader(str))
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	updatePeriod := 5 * time.Minute
+	statDuration := 24 * time.Hour
+	shiftPeriod := 1 * time.Hour
+	limitSize := int64(1000000000)
+	st := NewIdealStorage(updatePeriod, statDuration, shiftPeriod, limitSize, fi, false, false, false)
+
+	eventFn := func(file, strTime, sid string) {
+		evt := &data.SessionEvent{
+			FileName:    file,
+			SessionID:   sid,
+			Time:        StrToTime(strTime),
+			IntFileName: id(file),
+			FileSize:    500000000,
+			Bps:         6000000,
+			Duration:    time.Minute,
+		}
+		st.UpdateStart(evt)
+	}
+
+	checkFn := func(name string, expected []int) {
+		if len(expected) != len(st.contents) {
+			t.Errorf("[%v] %v != %v", name, len(expected), len(st.contents))
+			return
+		}
+		if len(expected) != len(st.contents) {
+			t.Errorf("[%v] %v != %v", name, len(expected), len(st.contents))
+			return
+		}
+		for _, v := range expected {
+			if st.Exists(v) == false {
+				t.Errorf("[%v] %v != %v", name, false, st.Exists(v))
+				return
+			}
+		}
+	}
+
+	checkFn("init", []int{})
+
+	eventFn("a.mpg", "2017-01-01 00:00:00", "s1")
+	eventFn("b.mpg", "2017-01-01 00:00:01", "s2")
+
+	checkFn("init", []int{})
+
+	eventFn("a.mpg", "2017-01-01 00:05:01", "s3")
+
+	checkFn("after update period", []int{id("a.mpg"), id("b.mpg")})
+
+	eventFn("c.mpg", "2017-01-01 00:05:02", "s4")
+	eventFn("c.mpg", "2017-01-01 00:05:02", "s5")
+	eventFn("c.mpg", "2017-01-01 00:10:01", "s6")
+
+	checkFn("change storage", []int{id("a.mpg"), id("c.mpg")})
+
+	eventFn("d.mpg", "2017-01-02 01:10:01", "s7")
+
+	checkFn("after stat duration(1day)", []int{id("d.mpg")})
 }
