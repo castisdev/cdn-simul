@@ -15,6 +15,7 @@ import (
 type FileInfo struct {
 	ID        int
 	File      string
+	Bps       int64
 	Size      int64
 	RegisterT time.Time
 }
@@ -48,12 +49,17 @@ func NewFileInfos(reader io.Reader) (*FileInfos, error) {
 	for _, v := range records {
 		strID := v[0]
 		fname := v[1]
+		strBps := v[2]
 		strSize := v[3]
 		strRegT := v[4]
 
 		id, err := strconv.Atoi(strID)
 		if err != nil {
 			return nil, fmt.Errorf("failed to convert id, %v", err)
+		}
+		bps, err := strconv.ParseInt(strBps, 10, 64)
+		if err != nil {
+			return nil, fmt.Errorf("failed to convert bps, %v", err)
 		}
 		fsize, err := strconv.ParseInt(strSize, 10, 64)
 		if err != nil {
@@ -63,7 +69,7 @@ func NewFileInfos(reader io.Reader) (*FileInfos, error) {
 		if err != nil {
 			return nil, fmt.Errorf("failed to convert register time, %v", err)
 		}
-		fi.Infos[id] = &FileInfo{ID: id, File: fname, Size: fsize, RegisterT: t}
+		fi.Infos[id] = &FileInfo{ID: id, File: fname, Bps: bps, Size: fsize, RegisterT: t}
 		fi.Keys[fname] = id
 		fi.LastKey = id
 	}

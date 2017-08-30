@@ -12,8 +12,8 @@ func TestNewFileInfos(t *testing.T) {
 	str := `
 7,a.mpg,6456984,518687068,2016-02-23T07:34:01
 22,b.mpg,6456946,491967484,2016-02-24T07:34:01`
-	exp1 := &FileInfo{7, "a.mpg", 518687068, time.Date(2016, 02, 23, 7, 34, 1, 0, time.UTC)}
-	exp2 := &FileInfo{22, "b.mpg", 491967484, time.Date(2016, 02, 24, 7, 34, 1, 0, time.UTC)}
+	exp1 := &FileInfo{7, "a.mpg", 6456984, 518687068, time.Date(2016, 02, 23, 7, 34, 1, 0, time.UTC)}
+	exp2 := &FileInfo{22, "b.mpg", 6456946, 491967484, time.Date(2016, 02, 24, 7, 34, 1, 0, time.UTC)}
 
 	fi, err := NewFileInfos(strings.NewReader(str))
 	if err != nil {
