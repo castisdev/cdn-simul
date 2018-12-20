@@ -10,7 +10,7 @@ import (
 
 	"github.com/castisdev/cdn-simul/data"
 	"github.com/castisdev/cdn-simul/lb/vod"
-	"github.com/castisdev/cdn/consistenthash"
+	"github.com/castisdev/gcommon/consistenthash"
 )
 
 // ErrFileNotFound :
