@@ -12,7 +12,7 @@ import (
 
 	"github.com/castisdev/cdn-simul/data"
 	"github.com/castisdev/cdn-simul/simul"
-	"github.com/castisdev/cdn/profile"
+	"github.com/castisdev/gcommon/profile"
 	"github.com/syndtr/goleveldb/leveldb"
 )
 
